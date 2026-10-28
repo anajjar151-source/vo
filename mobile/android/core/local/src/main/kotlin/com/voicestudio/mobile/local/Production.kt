@@ -15,6 +15,10 @@ data class ProductionSegment(val chapter: Int, val role: String, val text: Strin
 data class ProductionPlan(val segments: List<ProductionSegment>, val chapters: List<String>) {
     val roles get() = segments.map {it.role}.filter {it.isNotEmpty()}.distinct()
     companion object {
+        // Desktop [emotion:TEXT] directions (#3422): phone models take no emotion, so the tag is
+        // dropped (never read aloud). Stripped before the [voice:]/[speed:] prefix checks so any
+        // tag order works; case-insensitive like the desktop parser.
+        private val EMOTION=Regex("\\[emotion:[^\\]\\[]*\\]",RegexOption.IGNORE_CASE)
         fun parse(script: String,pronunciations: Map<String,String> = emptyMap(),speed: Float=1f): ProductionPlan {
             require(speed.isFinite()&&speed in 0.5f..2f&&pronunciations.size<=100)
             val replacements=NarrationText.rules(pronunciations)
@@ -26,6 +30,7 @@ data class ProductionPlan(val segments: List<ProductionSegment>, val chapters: L
                     val title=line.drop(2).trim()
                     if(chapters.size==1&&chapters[0].isEmpty()&&segments.isEmpty()) chapters[0]=title else chapters+=title
                 } else {
+                    line=EMOTION.replace(line," ").trim()
                     if(line.startsWith("[voice:")&&']' in line) {
                         role=line.substring(7,line.indexOf(']')).trim();line=line.substringAfter(']').trim()
                     }

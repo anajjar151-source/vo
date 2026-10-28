@@ -20,6 +20,7 @@ public struct ProductionPlan: Sendable {
         let replacements = try NarrationText.rules(pronunciations)
         guard script.utf16.count <= 1_000_000 else { throw ClientError("mobile.simple.audio_long") }
         var segments: [ProductionSegment] = [], chapters = [""], role = ""
+        let emotionPattern = try NSRegularExpression(pattern: "\\[emotion:[^\\]\\[]*\\]", options: [.caseInsensitive])
         for raw in script.components(separatedBy: .newlines) {
             var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.hasPrefix("# ") {
@@ -28,6 +29,10 @@ public struct ProductionPlan: Sendable {
                 else { chapters.append(title) }
                 continue
             }
+            // Desktop [emotion:TEXT] directions (#3422): phone models take no emotion, so the tag
+            // is dropped (never read aloud) before the [voice:]/[speed:] prefix checks, so any tag
+            // order works; case-insensitive like the desktop parser.
+            line = emotionPattern.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: " ").trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("[voice:"), let end = line.firstIndex(of: "]") {
                 role = String(line[line.index(line.startIndex, offsetBy: 7)..<end]).trimmingCharacters(in: .whitespaces)
                 line = String(line[line.index(after: end)...]).trimmingCharacters(in: .whitespaces)

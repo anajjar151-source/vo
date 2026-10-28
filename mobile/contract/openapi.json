@@ -3009,6 +3009,18 @@
    },
    "LongformSpan": {
     "properties": {
+     "emotion": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Emotion"
+     },
      "join": {
       "anyOf": [
        {

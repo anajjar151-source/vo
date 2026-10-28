@@ -18,6 +18,12 @@ class ProductionTest {
         assertTrue(plan.segments.all { it.text.isNotBlank() && it.text.length <= 400 })
         assertThrows(IllegalArgumentException::class.java) { ProductionPlan.parse("# Empty") }
     }
+    @Test fun desktopEmotionTagsAreNeverReadAloud() {
+        val plan = ProductionPlan.parse("[voice:Alice] [emotion:quietly terrified] [speed:1.5] Did you hear that?\n[EMOTION:sad] [voice:Bob] Only the wind.")
+        assertEquals(listOf("Did you hear that?", "Only the wind."), plan.segments.map { it.text })
+        assertEquals(listOf("Alice", "Bob"), plan.segments.map { it.role })
+        assertEquals(1.5f, plan.segments[0].speed)
+    }
     @Test fun restartResumesAndVoiceOrModelChangesInvalidateOutput() = runTest {
         val root = File(temporary.root, "production")
         val store = ProductionStore(root)

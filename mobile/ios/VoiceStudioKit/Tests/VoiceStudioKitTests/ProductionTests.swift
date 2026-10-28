@@ -14,6 +14,13 @@ import Testing
     #expect(unicode.segments.map(\.text).joined() == String(repeating: "😀",count: 401))
 }
 
+@Test func desktopEmotionTagsAreNeverReadAloud() throws {
+    let plan = try ProductionPlan(script: "[voice:Alice] [emotion:quietly terrified] [speed:1.5] Did you hear that?\n[EMOTION:sad] [voice:Bob] Only the wind.")
+    #expect(plan.segments.map(\.text) == ["Did you hear that?", "Only the wind."])
+    #expect(plan.segments.map(\.role) == ["Alice", "Bob"])
+    #expect(plan.segments[0].speed == 1.5)
+}
+
 @Test func designedVoiceRetainsSeedRecipeAndMarkedReferenceWithoutASR() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
