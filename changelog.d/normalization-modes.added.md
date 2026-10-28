@@ -1,1 +1,0 @@
-Text normalization gained a per-request auto/on/off switch, and Slovak numbers 0-99 speak as Slovak words (#3422)
