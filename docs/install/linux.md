@@ -159,8 +159,6 @@ A community-maintained Nix flake provides development shells and an FHS environm
 
 ```bash
 nix develop .#fhs   # recommended for NixOS
-bun install
-bun run setup:api
 bun run dev
 ```
 

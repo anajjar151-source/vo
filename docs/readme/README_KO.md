@@ -110,8 +110,6 @@ curl -fsSL https://voicestudio.sh/install | sh -s -- --uninstall       # 데이�
 ```bash
 git clone https://github.com/debpalash/VoiceStudio.git
 cd VoiceStudio
-bun install
-bun run setup:api
 bun run dev
 ```
 

@@ -46,7 +46,8 @@ release's `SHA256SUMS.txt` before running it.
 
 During an update, the installer closes processes running inside the selected
 installation folder. Processes in similarly named sibling folders and the
-installer itself are excluded. If an older installer keeps saying VoiceStudio
+installer itself are excluded. If an older installer leaves a running copy
+open, exit that copy before retrying. If it keeps saying VoiceStudio
 cannot be closed when the app is stopped, run the installer from a different
 folder (for example Downloads) and retry; keep your existing runtime, model
 cache and data folders.

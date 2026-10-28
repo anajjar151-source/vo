@@ -11,7 +11,7 @@
     "dev:desktop": "bun run --cwd electron dev",
     "wait:api": "node scripts/wait-app-port.mjs api",
     "wait:frontend": "node scripts/wait-app-port.mjs web",
-    "predev": "bun install",
+    "predev": "node scripts/prepare-dev.mjs",
     "dev": "bun run --cwd electron dev",
     "predesktop": "bun install",
     "desktop": "bun run --cwd electron dev",

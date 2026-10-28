@@ -8,6 +8,7 @@ import {
   torchSyncArgs,
 } from "../../electron/scripts/torch-variant.mjs";
 import { setupApi } from "../../scripts/setup-api.mjs";
+import { needsLocalBackendSetup, prepareDev } from "../../scripts/prepare-dev.mjs";
 import { uvRunArgs } from "../../scripts/dev-backend.mjs";
 
 for (const platform of ["linux", "win32"]) {
@@ -152,9 +153,37 @@ test("an Intel Mac stops before syncing and names the remote-backend path (#3584
   assert.equal(ran, false);
 });
 
-test("root setup command and every dev restart preserve the chosen CPU environment", () => {
+test("root dev prepares the API before launch", () => {
   const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
   assert.equal(pkg.scripts["setup:api"], "node scripts/setup-api.mjs");
+  assert.equal(pkg.scripts.predev, "node scripts/prepare-dev.mjs");
+
+  const calls = [];
+  assert.equal(
+    prepareDev({
+      env: {},
+      platform: "linux",
+      arch: "x64",
+      run(command, args) {
+        calls.push([command, ...args]);
+        return { status: 0 };
+      },
+    }),
+    0,
+  );
+  assert.deepEqual(calls, [
+    ["bun", "install"],
+    ["bun", "run", "setup:api"],
+  ]);
+});
+
+test("root dev leaves external-backend and Intel Mac launches usable", () => {
+  assert.equal(needsLocalBackendSetup({ env: { VOICESTUDIO_SKIP_BACKEND: "1" } }), false);
+  assert.equal(needsLocalBackendSetup({ env: { OMNIVOICE_BACKEND_CMD: '["python"]' } }), false);
+  assert.equal(needsLocalBackendSetup({ env: {}, platform: "darwin", arch: "x64" }), false);
+});
+
+test("every backend restart preserves the chosen CPU environment", () => {
   for (const variant of ["", "auto", "cpu", "cuda", "rocm"]) {
     assert.ok(uvRunArgs({ OMNIVOICE_TORCH_VARIANT: variant }).includes("--no-sync"));
   }

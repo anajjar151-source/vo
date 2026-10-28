@@ -20,7 +20,7 @@ Electron shortcut, or set `VOICESTUDIO_OPEN_DEVTOOLS=1` before `bun run dev`.
 This prevents Chromium's detached performance monitor from injecting failing
 timers into the app execution context during route transitions.
 
-Source launches verify required imports offline, then use the repository’s prepared `.venv` interpreter directly; startup and Retry never run dependency synchronization. Run `bun run setup:api` once before `bun run dev`, and again after Python dependencies change. Let setup finish before launching the app so a large PyTorch download is not interrupted by the backend health-check deadline. An explicit `OMNIVOICE_BACKEND_CMD` remains responsible for its own environment.
+`bun run dev` prepares the repository’s `.venv` before launching Electron when a supported local backend is needed, then source startup verifies required imports offline and uses that interpreter directly. The root `predev` script skips local API setup for an explicit `OMNIVOICE_BACKEND_CMD`, `VOICESTUDIO_SKIP_BACKEND=1`, and Intel Macs, which use a remote backend. Electron startup and Retry never run dependency synchronization. Let `predev` finish before the window launches so a large PyTorch download is not interrupted by the backend health-check deadline. Run `bun run setup:api` directly when only the Python environment needs rebuilding; an explicit backend command remains responsible for its own environment.
 
 Packaged startup first checks for a running VoiceStudio backend. If one answers, the shell attaches without creating or modifying a Python environment.
 

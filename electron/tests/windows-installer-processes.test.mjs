@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
@@ -23,15 +24,15 @@ for (const root of ['E:\\NN\\VoiceStudio', 'E:\\NN\\VoiceStudio\\', "E:\\O'Brien
   }, () => {
     const clean = root.replace(/\\+$/, '');
     const processes = [
-      { ProcessId: 1, Path: `${clean}\\VoiceStudio.exe` },
-      { ProcessId: 2, Path: `${clean.toLowerCase()}\\resources\\python.exe` },
-      { ProcessId: 3, Path: `${clean}-old\\VoiceStudio.exe` },
-      { ProcessId: 4, Path: `${clean}-0.5.7-setup.exe` },
-      { ProcessId: 4242, Path: `${clean}\\setup.exe` },
-      { ProcessId: 5, Path: null },
+      { ProcessId: 1, ExecutablePath: `${clean}\\VoiceStudio.exe` },
+      { ProcessId: 2, ExecutablePath: `${clean.toLowerCase()}\\resources\\python.exe` },
+      { ProcessId: 3, ExecutablePath: `${clean}-old\\VoiceStudio.exe` },
+      { ProcessId: 4, ExecutablePath: `${clean}-0.5.7-setup.exe` },
+      { ProcessId: 4242, ExecutablePath: `${clean}\\setup.exe` },
+      { ProcessId: 5, ExecutablePath: null },
     ];
     const predicate = predicates[0].replaceAll('$$', '$').replaceAll('$INSTDIR', root).replaceAll('$pid', '4242');
-    const script = `$items = ConvertFrom-Json $env:VS_PROCESS_FIXTURES; @($items | Where-Object { ${predicate} } | ForEach-Object { $_.ProcessId }) | ConvertTo-Json -Compress`;
+    const script = `$items = ConvertFrom-Json $env:VS_PROCESS_FIXTURES; ConvertTo-Json -InputObject @($items | Where-Object { ${predicate} } | ForEach-Object { $_.ProcessId }) -Compress`;
     const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
       encoding: 'utf8',
       env: { ...process.env, ELECTRON_BUILDER_INSTALL_ROOT: root, VS_PROCESS_FIXTURES: JSON.stringify(processes) },
@@ -40,3 +41,25 @@ for (const root of ['E:\\NN\\VoiceStudio', 'E:\\NN\\VoiceStudio\\', "E:\\O'Brien
     assert.deepEqual(JSON.parse(result.stdout.trim()), [1, 2]);
   });
 }
+
+test('installer detects a real Win32_Process child', { skip: process.platform !== 'win32', timeout: 40_000 }, async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  try {
+    await once(child, 'spawn');
+    const predicate = predicates[0].replaceAll('$$', '$');
+    const script = `$target = Get-CimInstance -ClassName Win32_Process -Filter 'ProcessId = ${child.pid}'; ConvertTo-Json -InputObject @($target | Where-Object { ${predicate} } | ForEach-Object { $_.ProcessId }) -Compress`;
+    const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], {
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: { ...process.env, ELECTRON_BUILDER_INSTALL_ROOT: dirname(process.execPath) },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout.trim()), [child.pid]);
+  } finally {
+    if (child.pid && child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit');
+      child.kill();
+      await exited;
+    }
+  }
+});

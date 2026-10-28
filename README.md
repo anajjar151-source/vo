@@ -110,10 +110,12 @@ Prerequisites and behavior: [installer guide](docs/install/script.md).
 ```bash
 git clone https://github.com/debpalash/VoiceStudio.git
 cd VoiceStudio
-bun install
-bun run setup:api
 bun run dev
 ```
+
+`bun run dev` installs the JavaScript dependencies and, when using a supported
+local backend, the Python dependencies before launching Electron. Run
+`bun run setup:api` directly when you only need to rebuild the Python environment.
 
 See [Electron setup](electron/README.md).
 
