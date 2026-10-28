@@ -330,6 +330,10 @@ _UNCHANGED_CASES = [
     ("vi-VN", "42 con mèo"),
     # Slovak numbers above the vetted 0-99 window keep their digits.
     ("Slovak", "Mám 105 kníh"),
+    # Space-grouped thousands are one quantity: expanding "1" and leaving
+    # "234" behind would split it (Greptile P1 on #3639).
+    ("Slovak", "Mám 1 234 kníh"),
+    ("sk", "12 000 ľudí"),
     ("Slovak", "V roku 2024 som mal 1234 eur"),
     ("sk", "Úspech 3.5 percenta"),
     (None, "42 cats"),                          # no language pin → no digits pass
@@ -354,6 +358,14 @@ _UNCHANGED_CASES = [
 @pytest.mark.parametrize("language,raw", _UNCHANGED_CASES)
 def test_leaves_unchanged(language, raw):
     assert normalize_text(raw, language) == raw
+
+
+def test_slovak_nbsp_thousands_keeps_digits():
+    """The safety filter normalizes NBSP to a space; the thousands group must
+    still survive as digits (never "jeden" + leftover "234")."""
+    out = normalize_text("Mám 1\u00a0234 kníh", "sk")
+    assert "234" in out
+    assert "jeden" not in out
 
 
 def test_full_name_lookup_gated_by_vetted_set():

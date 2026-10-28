@@ -693,12 +693,19 @@ _DATE_MONTH_RE = {
 # trailing or leading group on its own. A leading minus ("-1 234 %") belongs
 # to the run; the lookbehind still rejects it after a word ("a-1 234").
 _SPACE_GROUP_RE = re.compile(
-    r"(?<![\w.,:/$%-])-?\d{1,3}(?: \d{3})+(?:,\d+)?(?:\s?%)?(?![\w:/%-])(?![.,]\d)"
+    r"(?<![\w.,:/$%-])-?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:,\d+)?(?:\s?%)?(?![\w:/%-])(?![.,]\d)"
 )
+
+# Locales whose thousands groups are written with spaces: they are protected
+# from integer expansion as a WHOLE group (the number keeps its digits), or
+# "1 234" would be expanded as "1" then leave "234" behind. Comma-decimal
+# locales group this way, and Slovak does too — with no comma-decimal opt-in
+# of its own (its 0-99 window is the only vetted range).
+_SPACE_GROUPED_LANGS = _COMMA_DECIMAL_LANGS | {"sk"}
 
 
 def _grouped_spans(text: str, lang: str) -> list[tuple[int, int]]:
-    if lang not in _COMMA_DECIMAL_LANGS:
+    if lang not in _SPACE_GROUPED_LANGS:
         return []
     return [g.span() for g in _SPACE_GROUP_RE.finditer(text)]
 
