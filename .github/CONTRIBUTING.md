@@ -377,7 +377,8 @@ Every PR is reviewed by two AI reviewers before a human looks at it:
 
 - **CodeRabbit** posts a short collapsed summary (no diagrams), inline
   findings, and warning-mode pre-merge checks against the project's hard
-  rules (configured in `.coderabbit.yaml`).
+  rules (configured in `.coderabbit.yaml`). Finishing-touch repair prompts
+  for findings, failing CI, and merge conflicts are disabled.
 - **Greptile** reviews with the same project rubrics and learns from 👍/👎
   reactions on its comments — react to train it.
 
