@@ -63,7 +63,7 @@ Start with **VoiceStudio** (default, powered by k2-fsa/OmniVoice), or pick from 
 
 ## Platforms
 
-| Platform | Download | Acceleration | Status |
+| Platform | Download | Acceleration (engine-specific Vulkan options below) | Status |
 | :--- | :--- | :--- | :--- |
 | **macOS** (Apple Silicon) | `.dmg` · [guide](docs/install/macos.md) | Metal (MPS) | Stable |
 | **Windows 10/11** (x64) | `.exe` · [guide](docs/install/windows.md) | NVIDIA CUDA · [AMD ROCm (opt-in)](docs/install/windows-rocm.md) · CPU | Stable |
@@ -74,7 +74,9 @@ Start with **VoiceStudio** (default, powered by k2-fsa/OmniVoice), or pick from 
 | **Windows on ARM** | `.exe` · [guide](docs/install/windows.md) | CPU (x64 backend under emulation) | Experimental |
 | **Intel Mac** | `.dmg` · [why](docs/install/macos.md) | App UI only, connects to a remote backend | Limited |
 
-Desktop and phone installers are on the [latest release](https://github.com/debpalash/VoiceStudio/releases/latest); Docker images come from GHCR. No GPU? The app is fully usable on the CPU, just slower. Native GGUF engines can also use Vulkan on AMD, Intel and NVIDIA GPUs; OmniVoice GGUF picks its GPU and model size automatically on Windows and Linux ([OmniVoice](docs/engines/omnivoice-gguf.md#vulkan-acceleration), [CosyVoice](docs/engines/cosyvoice-gguf.md)). Speed by engine and hardware: [performance](docs/performance.md).
+Desktop and phone installers are on the [latest release](https://github.com/debpalash/VoiceStudio/releases/latest); Docker images come from GHCR. No GPU? The app is fully usable on the CPU, just slower. Native GGUF engines can also use Vulkan on AMD, Intel and NVIDIA GPUs; OmniVoice GGUF picks its GPU and model size automatically on Windows and Linux ([OmniVoice](docs/engines/omnivoice-gguf.md#vulkan-acceleration), [CosyVoice](docs/engines/cosyvoice-gguf.md)). Speed by engine and hardware: [performance](docs/performance.md). Vulkan discovery retries a stalled
+hidden Windows probe with a native summary; Windows and Linux desktop builds fail
+rather than silently ship without their Vulkan module.
 
 ## Get started
 
