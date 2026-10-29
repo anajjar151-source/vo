@@ -62,6 +62,13 @@ def test_speech_rejects_explicit_knobs_on_unsupported_engine(client, monkeypatch
     seen: dict = {}
     _register(monkeypatch, "no-knobs-engine", supports_knobs=False, seen=seen)
 
+    def _explode(*a, **kw):
+        raise AssertionError("evict_other_tts_engines must not run for a doomed request")
+
+    monkeypatch.setattr(
+        "services.engine_memory.evict_other_tts_engines", _explode
+    )
+
     res = client.post("/v1/audio/speech", json={
         "model": "no-knobs-engine", "input": "hello",
         "response_format": "wav", "num_step": 32,

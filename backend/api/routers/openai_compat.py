@@ -674,6 +674,35 @@ async def create_speech(req: SpeechRequest):
         raise OpenAIError(400, _routing["routing_reason"], param="model", code="model_not_available")
     _routing_notice = routing_notice(_routing)  # (status, reason) or None
 
+    # Engines whose runtime has no quality-knob flags (omnivoice-gguf: the
+    # bundled CLI accepts no num_step/guidance_scale) reject explicit values
+    # here, where "the caller asked" is still known — deeper layers can't
+    # tell an explicit request from an internal default fill (dubbing
+    # previews always pass num_step=8), and anything later would first
+    # evict the resident engine and warm this one for a request that is
+    # already doomed (#3654 review). Raised as the same OpenAIError the
+    # generate-step mapper builds for TTSInputError (400, param="input") —
+    # this site runs before that try block, and an unmapped TTSInputError
+    # would fall through to the generic 500.
+    if (req.num_step is not None or req.guidance_scale is not None) and not getattr(
+        backend, "supports_quality_knobs", True
+    ):
+        asked = ", ".join(
+            k
+            for k, v in (
+                ("num_step", req.num_step),
+                ("guidance_scale", req.guidance_scale),
+            )
+            if v is not None
+        )
+        raise OpenAIError(
+            400,
+            f"Engine '{backend.id}' does not support {asked}: the bundled "
+            f"runtime has no such options, so returning audio would silently "
+            f"ignore them. Omit {asked} or use the in-process omnivoice engine.",
+            param="input",
+        )
+
     # Build kwargs for the backend's generate() method
     kw: dict = {
         "speed": req.speed,
@@ -824,30 +853,6 @@ async def create_speech(req: SpeechRequest):
         # length-scaled one (#1190) — this route used to hardcode the flat 300s,
         # so long inputs failed here even after v0.3.22 shipped the scaling.
         from services.model_manager import generate_timeout_s
-        # Engines whose runtime has no quality-knob flags (omnivoice-gguf:
-        # the bundled CLI accepts no num_step/guidance_scale) reject
-        # explicit values here, where "the caller asked" is still known.
-        # Deeper layers can't tell an explicit request from an internal
-        # default fill — dubbing previews always pass num_step=8 — so the
-        # engine itself stays permissive (#3654 review).
-        if (req.num_step is not None or req.guidance_scale is not None) and not getattr(
-            backend, "supports_quality_knobs", True
-        ):
-            from services.tts_backend import TTSInputError
-
-            asked = ", ".join(
-                k
-                for k, v in (
-                    ("num_step", req.num_step),
-                    ("guidance_scale", req.guidance_scale),
-                )
-                if v is not None
-            )
-            raise TTSInputError(
-                f"Engine '{backend.id}' does not support {asked}: the bundled "
-                f"runtime has no such options, so returning audio would silently "
-                f"ignore them. Omit {asked} or use the in-process omnivoice engine."
-            )
         wav, sr = await run_on_gpu_pool_guarded(
             lambda: _run_tts(backend, text, kw), what="OpenAI TTS generate",
             timeout=generate_timeout_s(text, engine=backend))
