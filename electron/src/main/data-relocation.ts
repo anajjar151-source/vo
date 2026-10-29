@@ -232,6 +232,12 @@ class TargetChangedError extends Error {
   }
 }
 
+// Linux kernels before 6.13 stamp ctime from a coarse clock that ticks every
+// 1-10 ms, so a probe in the same tick as the mkdir leaves ctime unmoved and
+// proves nothing. Such a probe is repeated after a tick instead of failing.
+const IDENTITY_PROBE_ATTEMPTS = 5;
+const IDENTITY_PROBE_TICK_MS = 15;
+
 // A nonzero creation timestamp may be a mutable ctime fallback. Only probe
 // ambiguous roots; keep the exclusive marker open so inode reuse cannot make
 // cleanup adopt a replacement. No model files are open during this check.
@@ -241,34 +247,37 @@ async function stableDirectoryIdentity(
 ): Promise<BigIntStats> {
   if (selected.birthtimeNs === 0n) throw new Error('identity_unavailable');
   if (selected.birthtimeNs !== selected.ctimeNs) return selected;
-  const marker = join(target, `.voicestudio-identity-${randomUUID()}`);
-  const handle = await open(marker, 'wx');
-  try {
-    const owned = await handle.stat({ bigint: true });
-    const present = await lstat(marker, { bigint: true });
+  for (let attempt = 1; ; attempt++) {
+    const marker = join(target, `.voicestudio-identity-${randomUUID()}`);
+    const handle = await open(marker, 'wx');
+    try {
+      const owned = await handle.stat({ bigint: true });
+      const present = await lstat(marker, { bigint: true });
+      if (
+        !present.isFile() ||
+        present.size !== 0n ||
+        !sameFileGeneration(present, fileFingerprint(owned))
+      )
+        throw new TargetChangedError();
+      await rm(marker);
+    } catch (error) {
+      throw new RollbackIncompleteError(error);
+    } finally {
+      await handle.close();
+    }
+    const after = await lstat(target, { bigint: true });
     if (
-      !present.isFile() ||
-      present.size !== 0n ||
-      !sameFileGeneration(present, fileFingerprint(owned))
+      !after.isDirectory() ||
+      after.isSymbolicLink() ||
+      after.dev !== selected.dev ||
+      after.ino !== selected.ino
     )
       throw new TargetChangedError();
-    await rm(marker);
-  } catch (error) {
-    throw new RollbackIncompleteError(error);
-  } finally {
-    await handle.close();
+    if (after.birthtimeNs !== selected.birthtimeNs) throw new Error('identity_unavailable');
+    if (after.birthtimeNs !== after.ctimeNs) return after;
+    if (attempt === IDENTITY_PROBE_ATTEMPTS) throw new Error('identity_unavailable');
+    await new Promise((resolve) => setTimeout(resolve, IDENTITY_PROBE_TICK_MS));
   }
-  const after = await lstat(target, { bigint: true });
-  if (
-    !after.isDirectory() ||
-    after.isSymbolicLink() ||
-    after.dev !== selected.dev ||
-    after.ino !== selected.ino
-  )
-    throw new TargetChangedError();
-  if (after.birthtimeNs !== selected.birthtimeNs || after.birthtimeNs === after.ctimeNs)
-    throw new Error('identity_unavailable');
-  return after;
 }
 
 async function bindTargetDirectory(

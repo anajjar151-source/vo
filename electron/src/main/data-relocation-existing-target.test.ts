@@ -32,6 +32,8 @@ const constraints = vi.hoisted(() => ({
   mutableBirthtime: false,
   stableBirthtime: false,
   stableBirthtimes: new Map<string, bigint>(),
+  coarseCtimeReads: 0,
+  coarseCtimes: new Map<string, bigint>(),
   copyCalls: 0,
   beforeReadFile: null as ((path: string) => Promise<void>) | null,
   beforeOpen: null as ((path: string) => Promise<void>) | null,
@@ -88,7 +90,20 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         : info;
     },
     lstat: async (...args: Parameters<typeof actual.lstat>) => {
-      const info = await actual.lstat(...args);
+      let info = await actual.lstat(...args);
+      // A coarse ctime clock: the first reads of a staging root see its
+      // creation-time ctime even after a probe wrote to it.
+      if (
+        constraints.coarseCtimeReads > 0 &&
+        String(args[0]).includes('.voicestudio-moving-') &&
+        info.isDirectory() &&
+        'ctimeNs' in info
+      ) {
+        constraints.coarseCtimeReads--;
+        const key = String(args[0]);
+        if (!constraints.coarseCtimes.has(key)) constraints.coarseCtimes.set(key, info.ctimeNs);
+        info = Object.assign(Object.create(info), { ctimeNs: constraints.coarseCtimes.get(key) });
+      }
       if (constraints.stableBirthtime && info.isDirectory() && 'ctimeNs' in info) {
         const key = `${info.dev}:${info.ino}`;
         if (!constraints.stableBirthtimes.has(key))
@@ -195,6 +210,8 @@ afterEach(async () => {
   constraints.mutableBirthtime = false;
   constraints.stableBirthtime = false;
   constraints.stableBirthtimes.clear();
+  constraints.coarseCtimeReads = 0;
+  constraints.coarseCtimes.clear();
   constraints.copyCalls = 0;
   constraints.beforeOpen = constraints.beforeReadFile = constraints.afterCopy = null;
   constraints.largeIdentityPath = '';
@@ -998,6 +1015,29 @@ it.each([true, false])(
     expect(await prepared.rollback()).toBe(true);
     expect(await readdir(existing ? target : dirname(target))).toEqual([]);
     expect(await readFile(join(source, 'omnivoice.db'), 'utf8')).toBe('database');
+  },
+);
+
+it.each([
+  ['accepts', 'stableBirthtime'],
+  ['rejects', 'mutableBirthtime'],
+] as const)(
+  '%s a new destination when the first probe lands in the same ctime tick (%s)',
+  async (outcome, kind) => {
+    const { source, target } = await fixture();
+    await rm(target, { recursive: true });
+    constraints[kind] = true;
+    // The initial read and the first post-probe read share the mkdir's tick.
+    constraints.coarseCtimeReads = 2;
+    const result = await prepareDataRelocation(source, target).catch((error) => error);
+    if (outcome === 'accepts') {
+      expect(await readFile(join(target, 'omnivoice.db'), 'utf8')).toBe('database');
+      expect(await result.rollback()).toBe(true);
+    } else {
+      expect(result).toMatchObject({ message: 'identity_unavailable' });
+      expect(constraints.copyCalls).toBe(0);
+    }
+    expect(await readdir(dirname(target))).toEqual([]);
   },
 );
 
