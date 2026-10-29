@@ -1,12 +1,13 @@
-"""/v1/audio/speech vs engines without quality-knob flags (#3654).
+"""
+/v1/audio/speech vs engines without quality knobs (#3654).
 
-The GGUF backend's bundled CLI accepts no num_step/guidance_scale, so an
-explicit value there used to 200 with audio identical to the default call —
-the #1014 class one layer down. The fix rejects at this boundary (where
-"the caller asked" is still known — deeper layers can't tell an explicit
-request from dubbing previews' hardcoded num_step=8) with a 400 naming the
-parameter, instead of a 500 or silent default-quality audio. Engine-layer
-permissiveness is pinned in tests/backend/engines/test_omnivoice_gguf.py.
+Several engines' runtimes have no num_step/guidance_scale options, so an
+explicit value used to 200 with silently default-quality audio (the #1014
+class one layer down — the reporter benchmarked 16 vs 32 and measured
+identical files). The endpoint rejects explicit values per knob with a 400
+naming the parameter. The engine itself stays permissive: deeper layers
+can't tell an explicit request from an internal default fill (dubbing
+previews always pass num_step=8). Per-engine audit in the PR thread.
 """
 from __future__ import annotations
 
@@ -27,7 +28,8 @@ def client():
     return TestClient(app, client=("127.0.0.1", 50000))
 
 
-def _register(monkeypatch, engine_id, *, supports_knobs, seen):
+def _register(monkeypatch, engine_id, *, supports_num_step=True,
+              supports_guidance_scale=True, seen):
     import torch
 
     tts = _tts_mod()
@@ -35,7 +37,6 @@ def _register(monkeypatch, engine_id, *, supports_knobs, seen):
     class _FakeEngine(tts.TTSBackend):
         id = engine_id
         display_name = "Fake Engine (test)"
-        supports_quality_knobs = supports_knobs
 
         @property
         def sample_rate(self) -> int:
@@ -53,6 +54,9 @@ def _register(monkeypatch, engine_id, *, supports_knobs, seen):
             seen.update(kw)
             return torch.zeros(1, 24000)
 
+    # Class bodies don't close over function locals — set the flags after.
+    _FakeEngine.supports_num_step = supports_num_step
+    _FakeEngine.supports_guidance_scale = supports_guidance_scale
     monkeypatch.setitem(tts._REGISTRY, engine_id, _FakeEngine)
 
 
@@ -60,7 +64,8 @@ def test_speech_rejects_explicit_knobs_on_unsupported_engine(client, monkeypatch
     """Explicit num_step/guidance_scale on an engine without those flags →
     400 naming the parameter (was 200 with silently default audio)."""
     seen: dict = {}
-    _register(monkeypatch, "no-knobs-engine", supports_knobs=False, seen=seen)
+    _register(monkeypatch, "no-knobs-engine", supports_num_step=False,
+              supports_guidance_scale=False, seen=seen)
 
     def _explode(*a, **kw):
         raise AssertionError("evict_other_tts_engines must not run for a doomed request")
@@ -85,10 +90,44 @@ def test_speech_rejects_explicit_knobs_on_unsupported_engine(client, monkeypatch
     assert "guidance_scale" in res.json()["detail"]
 
 
-def test_speech_passes_knobs_to_supporting_engines(client, monkeypatch):
-    """Default backends keep accepting (and forwarding) the knobs."""
+def test_speech_partial_support_rejects_only_the_unsupported_knob(client, monkeypatch):
+    """supertonic3 honors num_step but not guidance_scale; audio.cpp honors
+    guidance_scale but not num_step — each rejects only its own gap."""
     seen: dict = {}
-    _register(monkeypatch, "knobs-engine", supports_knobs=True, seen=seen)
+    _register(monkeypatch, "partial-steps", supports_num_step=True,
+              supports_guidance_scale=False, seen=seen)
+    res = client.post("/v1/audio/speech", json={
+        "model": "partial-steps", "input": "hello",
+        "response_format": "wav", "num_step": 32,
+    })
+    assert res.status_code == 200, res.text
+    assert seen.get("num_step") == 32
+    res = client.post("/v1/audio/speech", json={
+        "model": "partial-steps", "input": "hello",
+        "response_format": "wav", "guidance_scale": 5.0,
+    })
+    assert res.status_code == 400, res.text
+    assert "guidance_scale" in res.json()["detail"]
+
+    seen2: dict = {}
+    _register(monkeypatch, "partial-guidance", supports_num_step=False,
+              supports_guidance_scale=True, seen=seen2)
+    res = client.post("/v1/audio/speech", json={
+        "model": "partial-guidance", "input": "hello",
+        "response_format": "wav", "guidance_scale": 5.0,
+    })
+    assert res.status_code == 200, res.text
+    res = client.post("/v1/audio/speech", json={
+        "model": "partial-guidance", "input": "hello",
+        "response_format": "wav", "num_step": 32,
+    })
+    assert res.status_code == 400, res.text
+
+
+def test_speech_passes_knobs_to_supporting_engines(client, monkeypatch):
+    """Default engines keep accepting (and forwarding) the knobs."""
+    seen: dict = {}
+    _register(monkeypatch, "knobs-engine", seen=seen)
 
     res = client.post("/v1/audio/speech", json={
         "model": "knobs-engine", "input": "hello",
@@ -101,10 +140,28 @@ def test_speech_passes_knobs_to_supporting_engines(client, monkeypatch):
 def test_speech_omits_knobs_cleanly_on_unsupported_engine(client, monkeypatch):
     """No knobs passed → the request flows to synthesis untouched."""
     seen: dict = {}
-    _register(monkeypatch, "no-knobs-quiet", supports_knobs=False, seen=seen)
+    _register(monkeypatch, "no-knobs-quiet", supports_num_step=False,
+              supports_guidance_scale=False, seen=seen)
 
     res = client.post("/v1/audio/speech", json={
         "model": "no-knobs-quiet", "input": "hello",
         "response_format": "wav",
     })
     assert res.status_code == 200, res.text
+
+
+def test_real_gguf_backend_advertises_no_knob_support():
+    """The actual reported engine, not just the fakes."""
+    from engines.omnivoice_gguf.backend import _make_backend_class
+
+    cls = _make_backend_class()
+    assert cls.supports_num_step is False
+    assert cls.supports_guidance_scale is False
+
+
+def test_base_backend_defaults_keep_everything_else_working():
+    """New flags default True — unverified engines behave exactly as before."""
+    from services.tts_backend import TTSBackend
+
+    assert TTSBackend.supports_num_step is True
+    assert TTSBackend.supports_guidance_scale is True

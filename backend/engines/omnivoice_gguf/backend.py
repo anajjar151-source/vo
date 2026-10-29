@@ -548,9 +548,10 @@ def _make_backend_class():
 
         supports_voice_design = False
         # The bundled omnivoice-tts CLI has no num_step/guidance_scale
-        # flags — explicit values are rejected at the API boundary with a
-        # 400 instead of silently returning default-quality audio (#3654).
-        supports_quality_knobs = False
+        # flags (verified against the C++ usage text) — explicit values are
+        # rejected at the API boundary with a 400 (#3654).
+        supports_num_step = False
+        supports_guidance_scale = False
         # The seed reaches the binary as --seed; the parent's torch RNG never
         # does, so /generate must forward it (#3413).
         supports_generation_seed = True

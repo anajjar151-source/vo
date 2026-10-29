@@ -662,7 +662,8 @@ def test_generate_leaves_quality_knobs_to_the_caller(monkeypatch):
     from engines.omnivoice_gguf import backend as gguf_backend
 
     cls = gguf_backend._make_backend_class()
-    assert cls.supports_quality_knobs is False
+    assert cls.supports_num_step is False
+    assert cls.supports_guidance_scale is False
     backend = cls()
     monkeypatch.setattr(
         backend, "_resolve_quant_paths",

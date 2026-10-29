@@ -504,11 +504,13 @@ class TTSBackend(ABC):
         return tuple(cls.cloning_model_keys)
 
     #: Whether this engine honors the diffusion quality knobs
-    #: (``num_step``, ``guidance_scale``). Default True — the bundled
-    #: ``omnivoice-tts`` CLI backing omnivoice-gguf has no such flags, so
-    #: that engine sets this False and callers asking for them get a 400
-    #: instead of silently default-quality audio (#3654).
-    supports_quality_knobs: bool = True
+    #: (``num_step``, ``guidance_scale``). Engines whose runtime has no such
+    #: options set these False, and /v1/audio/speech rejects explicit values
+    #: with a 400 instead of silently returning default-quality audio
+    #: (#3654). Default True — False is set only where reading the generate
+    #: chain proves the knob is dropped.
+    supports_num_step: bool = True
+    supports_guidance_scale: bool = True
 
     #: GPU/accelerator targets the engine can run on. Surfaced via the
     #: Engine Compatibility Matrix (Plan 02-04 / ENGINE-06) so users can
@@ -2345,6 +2347,9 @@ class MossTTSNanoBackend(TTSBackend):
     id = "moss-tts-nano"
     display_name = "MOSS-TTS-Nano (20 langs, CPU realtime, 48 kHz)"
     supports_voice_design = False  # strictly reference-cloning
+    # generate() forwards text + prompt_audio_path only (#3654).
+    supports_num_step = False
+    supports_guidance_scale = False
     gpu_compat = ("cuda", "cpu")
 
     def __init__(self):
@@ -2471,6 +2476,10 @@ class KittenTTSBackend(TTSBackend):
     # instruct is ignored too, so a Voice Design take would always be the same
     # preset voice whatever the details or seed (#3413).
     supports_voice_design = False
+    # The ONNX graph takes voice/speed only — quality knobs have nowhere to
+    # go, so explicit values 400 at /v1/audio/speech (#3654).
+    supports_num_step = False
+    supports_guidance_scale = False
 
     PRESET_VOICES = [
         "expr-voice-2-m", "expr-voice-2-f",
@@ -3275,6 +3284,10 @@ class CosyVoiceBackend(TTSBackend):
     display_name = "CosyVoice 3 (9 langs, zero-shot, instruct, Apache-2.0)"
     # instruct + reference → inference_instruct2 (emotion, dialect, pace).
     instruct_directs_delivery = True
+    # generate() calls explicit inference_* entry points with no quality
+    # knobs in their signatures (#3654).
+    supports_num_step = False
+    supports_guidance_scale = False
     inline_tags = COSYVOICE_INLINE_TAGS
     # CosyVoice's official inference path expects CUDA; CPU works but slow.
     # MPS support not verified upstream — flagged for Phase 6 confirmation.
@@ -3471,6 +3484,9 @@ class GPTSoVITSBackend(TTSBackend):
     id = "gpt-sovits"
     display_name = "GPT-SoVITS (5 langs, zero-shot, RTF 0.014, MIT)"
     supports_voice_design = False  # api_v2 needs a reference clip for every request
+    # The api_v2 body carries text/lang/ref/speed only — no quality knobs (#3654).
+    supports_num_step = False
+    supports_guidance_scale = False
     # Server-side; whichever device GPT-SoVITS itself uses (CUDA preferred).
     gpu_compat = ("cuda", "cpu")
 
@@ -3676,6 +3692,9 @@ class SherpaOnnxBackend(TTSBackend):
     gpu_compat = ("cuda", "cpu")
     supports_cloning = False  # VITS speaker-id only; no ref_audio support
     supports_voice_design = False  # speaker ids only; instruct is never read (#3413)
+    # generate() calls VITS generate(text, sid, speed) — no knobs (#3654).
+    supports_num_step = False
+    supports_guidance_scale = False
 
     def __init__(self):
         self._tts = None
