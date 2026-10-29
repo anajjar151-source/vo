@@ -29,7 +29,7 @@ def client():
 
 
 def _register(monkeypatch, engine_id, *, supports_num_step=True,
-              supports_guidance_scale=True, seen):
+              supports_guidance_scale=True, num_step_range=None, seen):
     import torch
 
     tts = _tts_mod()
@@ -57,6 +57,7 @@ def _register(monkeypatch, engine_id, *, supports_num_step=True,
     # Class bodies don't close over function locals — set the flags after.
     _FakeEngine.supports_num_step = supports_num_step
     _FakeEngine.supports_guidance_scale = supports_guidance_scale
+    _FakeEngine.num_step_range = num_step_range
     monkeypatch.setitem(tts._REGISTRY, engine_id, _FakeEngine)
 
 
@@ -165,3 +166,46 @@ def test_base_backend_defaults_keep_everything_else_working():
 
     assert TTSBackend.supports_num_step is True
     assert TTSBackend.supports_guidance_scale is True
+
+
+def test_speech_rejects_out_of_range_steps(client, monkeypatch):
+    """A supporting engine with a documented range still 400s an explicit
+    value it would silently clamp (supertonic3: 32 would render as 12)."""
+    seen: dict = {}
+    _register(monkeypatch, "ranged-engine", num_step_range=(5, 12), seen=seen)
+
+    res = client.post("/v1/audio/speech", json={
+        "model": "ranged-engine", "input": "hello",
+        "response_format": "wav", "num_step": 32,
+    })
+    assert res.status_code == 400, res.text
+    assert "num_step" in res.json()["detail"]
+    assert seen == {}, "rejected before any synthesis work"
+
+    res = client.post("/v1/audio/speech", json={
+        "model": "ranged-engine", "input": "hello",
+        "response_format": "wav", "num_step": 8,
+    })
+    assert res.status_code == 200, res.text
+    assert seen.get("num_step") == 8
+
+
+def test_real_ranged_engines_advertise_their_bounds():
+    from engines.supertonic3.backend import Supertonic3Backend
+    from services.tts_backend import VoxCPM2Backend
+    from engines.voxcpm2_subprocess import VoxCPM2SubprocessBackend
+
+    assert Supertonic3Backend.supports_num_step is True
+    assert Supertonic3Backend.supports_guidance_scale is False
+    assert Supertonic3Backend.num_step_range == (5, 12)
+    assert VoxCPM2Backend.num_step_range == (1, 64)
+    assert VoxCPM2SubprocessBackend.num_step_range == (1, 64)
+
+
+def test_real_sidecar_backends_advertise_no_knob_support():
+    from engines.cosyvoice_subprocess import CosyVoiceSubprocessBackend
+    from engines.moss_tts_nano_subprocess import MossTTSNanoSubprocessBackend
+
+    for cls in (CosyVoiceSubprocessBackend, MossTTSNanoSubprocessBackend):
+        assert cls.supports_num_step is False
+        assert cls.supports_guidance_scale is False

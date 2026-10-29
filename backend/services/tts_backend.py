@@ -512,6 +512,13 @@ class TTSBackend(ABC):
     supports_num_step: bool = True
     supports_guidance_scale: bool = True
 
+    #: Inclusive (min, max) bound for ``num_step`` when
+    #: :attr:`supports_num_step` holds. ``None`` = unbounded. Engines that
+    #: silently clamp (supertonic3 → [5, 12], VoxCPM2 → [1, 64]) declare it
+    #: so /v1/audio/speech rejects out-of-range explicit values instead of
+    #: returning audio built from a different step count (#3654).
+    num_step_range: tuple[int, int] | None = None
+
     #: GPU/accelerator targets the engine can run on. Surfaced via the
     #: Engine Compatibility Matrix (Plan 02-04 / ENGINE-06) so users can
     #: tell at a glance which engines will use their hardware. Defaults to
@@ -2204,6 +2211,9 @@ class VoxCPM2Backend(TTSBackend):
     max_ref_seconds = _VOXCPM_REF_MAX_S
     ref_strategy = "head"
     applies_own_mastering = True  # Native studio-grade 48 kHz needs no apply_mastering().
+    # generation_kwargs() clamps inference_timesteps to [1, 64] — an explicit
+    # value outside that range would silently render as the edge (#3654).
+    num_step_range: tuple[int, int] = (1, 64)
     gpu_compat = ("cuda", "mps", "cpu")
 
     def __init__(self):

@@ -84,6 +84,9 @@ class Supertonic3Backend(SubprocessBackend):
     # num_step forwards to the SDK's total_steps; guidance has no counterpart
     # in generate()'s honored kwargs, so explicit values 400 (#3654).
     supports_guidance_scale = False
+    # The SDK clamps outside [5, 12] — an explicit 32 would silently render
+    # as 12, so the endpoint rejects out-of-range values instead (#3654).
+    num_step_range: tuple[int, int] = (5, 12)
     #: Selectable built-in voices; /generate's ``preset_voice`` and the voice
     #: picker read these (#2938). Same list ``generate()`` validates against.
     PRESET_VOICES = list(st3_constants.VOICE_PRESETS)

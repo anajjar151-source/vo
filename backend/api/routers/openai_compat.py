@@ -700,6 +700,19 @@ async def create_speech(req: SpeechRequest):
             f"ignore them. Omit {names} or use the in-process omnivoice engine.",
             param="input",
         )
+    num_step_range = getattr(backend, "num_step_range", None)
+    if (
+        req.num_step is not None
+        and num_step_range is not None
+        and not (num_step_range[0] <= req.num_step <= num_step_range[1])
+    ):
+        raise OpenAIError(
+            400,
+            f"Engine '{backend.id}' supports num_step {num_step_range[0]}–{num_step_range[1]}; "
+            f"got {req.num_step}, which it would silently clamp. Omit num_step "
+            f"or pick a value in range.",
+            param="num_step",
+        )
 
     # Build kwargs for the backend's generate() method
     kw: dict = {
