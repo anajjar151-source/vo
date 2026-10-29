@@ -122,7 +122,7 @@ describe('DesktopUpdater', () => {
     expect(observed).toEqual(['checking', 'available', 'downloading', 'downloaded']);
     expect(updater.snapshot()).toMatchObject({
       status: 'downloaded',
-      currentVersion: '0.5.2',
+      currentVersion: __APP_VERSION__,
       availableVersion: '0.5.3',
       notes: 'Ready',
       progress: 100,
@@ -376,7 +376,10 @@ describe('DesktopUpdater', () => {
   test('exposes unsupported state without touching updater APIs in development', async () => {
     mocks.app.isPackaged = false;
     const updater = new DesktopUpdater();
-    expect(updater.snapshot()).toMatchObject({ status: 'unsupported' });
+    expect(updater.snapshot()).toMatchObject({
+      status: 'unsupported',
+      unsupportedReason: 'development',
+    });
     await updater.check();
     await updater.download();
     updater.install();
@@ -384,11 +387,37 @@ describe('DesktopUpdater', () => {
     expect(mocks.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
   });
 
+  test('a development run shows and saves the channel without updating itself', async () => {
+    mocks.app.isPackaged = false;
+    mocks.disk.file = '{"channel":"beta"}';
+    const updater = new DesktopUpdater();
+    expect(updater.snapshot()).toMatchObject({ status: 'unsupported', channel: 'beta' });
+    expect(updater.setChannel('stable')).toMatchObject({
+      status: 'unsupported',
+      channel: 'stable',
+    });
+    expect(mocks.disk.file).toContain('"stable"');
+    await updater.check();
+    expect(mocks.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+  });
+
+  test('a package-managed install exposes no channel to switch', () => {
+    vi.stubEnv('VOICESTUDIO_DISABLE_UPDATER', '1');
+    try {
+      expect(new DesktopUpdater().snapshot().channel).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   test('stays unsupported when a package manager owns the install', async () => {
     vi.stubEnv('VOICESTUDIO_DISABLE_UPDATER', '1');
     try {
       const updater = new DesktopUpdater();
-      expect(updater.snapshot()).toMatchObject({ status: 'unsupported' });
+      expect(updater.snapshot()).toMatchObject({
+        status: 'unsupported',
+        unsupportedReason: 'package-manager',
+      });
       await updater.check();
       expect(mocks.autoUpdater.setFeedURL).not.toHaveBeenCalled();
       expect(mocks.autoUpdater.checkForUpdates).not.toHaveBeenCalled();
@@ -401,7 +430,10 @@ describe('DesktopUpdater', () => {
     'defers updates to the %s even when the updater environment override is absent',
     async (distribution) => {
       const updater = new DesktopUpdater(distribution);
-      expect(updater.snapshot()).toMatchObject({ status: 'unsupported' });
+      expect(updater.snapshot()).toMatchObject({
+        status: 'unsupported',
+        unsupportedReason: 'store',
+      });
       await updater.check();
       await updater.download();
       updater.install();
@@ -422,6 +454,7 @@ describe('DesktopUpdater', () => {
     );
     const updater = new DesktopUpdater('microsoft-store', feedFetcher);
     expect(updater.snapshot()).toMatchObject({ status: 'idle' });
+    expect(updater.snapshot().unsupportedReason).toBeUndefined();
     expect(mocks.autoUpdater.setFeedURL).not.toHaveBeenCalled();
     await updater.check();
     expect(mocks.autoUpdater.setFeedURL).toHaveBeenCalledOnce();
@@ -440,6 +473,13 @@ describe('DesktopUpdater', () => {
             body: 'Ready',
           },
           { name: 'missing tag' },
+          {
+            tag_name: 'mobile-v0.5.7-beta.2',
+            name: 'mobile-v0.5.7-beta.2 — VoiceStudio mobile',
+            published_at: '2026-10-24T14:00:00Z',
+            prerelease: true,
+            body: 'Phone apps',
+          },
         ]),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),

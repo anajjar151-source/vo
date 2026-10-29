@@ -23,6 +23,7 @@ import {
   canAcknowledgeModelPlan,
   modelLicenseCategory,
   modelLicenseCategoryKey,
+  modelLicenseShortKey,
   modelLicenseUrl,
   type ModelLicenceAcceptance,
   type ModelLicenseInfo,
@@ -295,8 +296,8 @@ export function ModelLicense({
         title={summary}
         aria-label={`${t('modelLicense.label')}: ${summary}; ${label}`}
       >
-        <span aria-hidden="true">{t('modelLicense.label')}:</span>
         <ModelLicenseIcon category={modelLicenseCategory(currentInfo?.license_category)} />
+        <span aria-hidden="true">{t(modelLicenseShortKey(currentInfo?.license_category))}</span>
       </Button>
       <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
         <DialogContent
@@ -319,7 +320,11 @@ export function ModelLicense({
             closeDisabled={busy === 'commit'}
           >
             <div className="p-4">
-              <ModelLicenceView details={details.data} infoFallback={info} extra={verifiedInstall} />
+              <ModelLicenceView
+                details={details.data}
+                infoFallback={info}
+                extra={verifiedInstall}
+              />
               {details.isError && (
                 <p role="alert" className="mt-3 text-sm text-destructive">
                   {t('modelLicense.detailsFailed')}

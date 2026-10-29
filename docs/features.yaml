@@ -36,6 +36,9 @@ tts_engines:
   - id: cosyvoice
     readme: CosyVoice 3
     doc: docs/engines/cosyvoice.md
+  - id: cosyvoice-gguf
+    readme: CosyVoice 3 GGUF
+    doc: docs/engines/cosyvoice-gguf.md
   - id: kittentts
     readme: KittenTTS
   - id: mlx-audio
@@ -62,6 +65,8 @@ tts_engines:
     doc: docs/engines/confucius4-tts.md
   - id: pockettts
   - id: audiocpp
+    doc: docs/engines/audio-cpp.md
+  - id: audiocpp-dots
     doc: docs/engines/audio-cpp.md
 
 # Same contract against backend/services/asr_backend.py _REGISTRY.

@@ -1,15 +1,29 @@
 import { spawnSync } from 'node:child_process';
 import './locale-encoding.mjs';
 import config from '../electron-builder.config.mjs';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { verifyLinuxLibraries } from '../native-linux-libraries.mjs';
+import {
+  OMNIVOICE_TTS_MANIFEST,
+  OMNIVOICE_TTS_RESOURCE_DIR,
+  manifestMismatches,
+  omnivoiceTtsBinaryName,
+  omnivoiceTtsSlug,
+  readManifest,
+} from '../omnivoice-tts-bundle.mjs';
 import { APP_ID, PRODUCT_NAME } from '../../config/app-config.mjs';
 import { DISTRIBUTION_PROFILE, DISTRIBUTION_TARGET } from '../../config/distributions.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const installerProcessesTest = spawnSync(
+  process.execPath,
+  ['--test', resolve(root, 'tests/windows-installer-processes.test.mjs')],
+  { encoding: 'utf8' },
+);
+assert.equal(installerProcessesTest.status, 0, installerProcessesTest.stdout + installerProcessesTest.stderr);
 if (process.platform === 'linux') {
   const librariesTest = spawnSync(
     process.execPath,
@@ -74,15 +88,14 @@ const electronPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), '
 assert.match(electronPackage.author?.email ?? '', /@/, 'Linux package declares a maintainer email');
 assert.equal(config.productName, PRODUCT_NAME, 'Builder uses the central product name');
 assert.equal(config.appId, APP_ID, 'Builder uses the central application ID');
+const storeLabel = {
+  'microsoft-store': 'MicrosoftStore-',
+  'mac-app-store': 'MacAppStore-',
+}[DISTRIBUTION_TARGET];
 assert.equal(
   config.artifactName,
-  `${PRODUCT_NAME}-${
-    {
-      'microsoft-store': 'MicrosoftStore',
-      'mac-app-store': 'MacAppStore',
-    }[DISTRIBUTION_TARGET] ?? 'Electron'
-  }-\${version}-\${os}-\${arch}.\${ext}`,
-  'Store packaging is distinct without renaming direct-download artifacts',
+  `${PRODUCT_NAME}-${storeLabel ?? ''}\${version}-\${os}-\${arch}.\${ext}`,
+  'Direct downloads are VoiceStudio-<version>-<os>-<arch>; store packages stay labelled',
 );
 assert.equal(
   config.extraMetadata.voicestudioDistribution,
@@ -203,6 +216,42 @@ if (process.env.VOICESTUDIO_RUST_TARGET || process.env.VOICESTUDIO_BUNDLED_UV) {
 if (artifactRequested && bundledUvSource) {
   assert(existsSync(resolve(artifactResources, bundledUvSource.to)), 'Packaged uv executable');
 }
+// #2780: release and rehearsal builds ship the OmniVoice GGUF runtime where
+// the backend looks for it (resources/bin/omnivoice-tts-<slug>). The workflow
+// names the slug it staged; it must be the one this target's backend resolves.
+const omnivoiceTtsPlatform = process.env.VOICESTUDIO_OMNIVOICE_TTS_PLATFORM;
+if (omnivoiceTtsPlatform) {
+  assert.equal(
+    omnivoiceTtsPlatform,
+    omnivoiceTtsSlug(process.platform, artifactArch),
+    'Staged GGUF runtime matches the backend slug for this target',
+  );
+  const runtime = config.extraResources.find((item) => item.to === OMNIVOICE_TTS_RESOURCE_DIR);
+  assert(runtime, 'Release builds package the OmniVoice GGUF runtime');
+  const binary = omnivoiceTtsBinaryName(omnivoiceTtsPlatform);
+  const dirs = [['Staged', runtime.from]];
+  if (artifactRequested) {
+    dirs.push(['Packaged', resolve(artifactResources, OMNIVOICE_TTS_RESOURCE_DIR)]);
+  }
+  for (const [label, dir] of dirs) {
+    const file = resolve(dir, binary);
+    assert(existsSync(file) && statSync(file).size > 0, `${label} GGUF runtime: ${binary}`);
+    assert(
+      readManifest(resolve(dir, OMNIVOICE_TTS_MANIFEST)).has(binary),
+      `${label} ${OMNIVOICE_TTS_MANIFEST} covers ${binary}`,
+    );
+    assert.deepEqual(manifestMismatches(dir), [], `${label} GGUF runtime matches its manifest`);
+  }
+  if (artifactRequested && process.platform !== 'win32') {
+    const packaged = resolve(artifactResources, OMNIVOICE_TTS_RESOURCE_DIR, binary);
+    assert(statSync(packaged).mode & 0o111, 'Packaged GGUF runtime is executable');
+  }
+  if (artifactRequested && process.platform === 'darwin') {
+    const packaged = resolve(artifactResources, OMNIVOICE_TTS_RESOURCE_DIR, binary);
+    const verify = spawnSync('codesign', ['--verify', '--strict', packaged], { encoding: 'utf8' });
+    assert.equal(verify.status, 0, `Packaged GGUF runtime is signed: ${verify.stderr}`);
+  }
+}
 assert.equal(
   config.extraMetadata.version,
   JSON.parse(readFileSync(resolve(root, '../package.json'))).version,
@@ -216,9 +265,20 @@ for (const [platform, icon] of Object.entries(platformIcons)) {
   assert.equal(config[platform].icon, icon, `${platform} uses the shared VoiceStudio icon`);
   assert(existsSync(resolve(root, icon)), `${platform} VoiceStudio icon exists`);
 }
-for (const icon of ['brand/icon.png', 'brand/icon.ico', 'brand/32x32.png']) {
+for (const icon of [
+  'brand/icon.png',
+  'brand/icon-macos.png',
+  'brand/icon.ico',
+  'brand/32x32.png',
+  'brand/tray-recording.png',
+  'brand/trayTemplate.png',
+  'brand/trayRecordingTemplate.png',
+]) {
   const entry = config.extraResources.find((item) => item.to === icon);
   assert(entry && existsSync(resolve(root, entry.from)), `Runtime icon: ${icon}`);
+  if (artifactRequested) {
+    assert(existsSync(resolve(artifactResources, icon)), `Packaged runtime icon: ${icon}`);
+  }
 }
 assert.equal(typeof config.afterPack, 'function', 'Native helper must be built before signing');
 // electron-builder UNIONS an explicit per-target `arch` with the --x64/--arm64

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { isTrustedRenderer } from './trusted-renderer';
 import type { UpdateReleaseInfo, UpdateState } from '../preload/index.d';
 import { sendToLiveWindow } from './window-safety';
-import { applicationUpdatesSupported, CURRENT_DISTRIBUTION } from './distribution';
+import { applicationUpdatesUnsupportedReason, CURRENT_DISTRIBUTION } from './distribution';
 import type { DistributionTarget } from '../../../config/distributions.mjs';
 
 // electron-updater is CommonJS. Electron executes our main bundle as ESM, so
@@ -207,7 +207,8 @@ export async function listDesktopReleases(
     if (!value || typeof value !== 'object') return [];
     const item = value as Record<string, unknown>;
     const tag = typeof item.tag_name === 'string' ? item.tag_name.trim() : '';
-    if (!tag) return [];
+    // Only desktop releases: the phone apps publish `mobile-vX.Y.Z` prereleases too.
+    if (!RELEASE_TAG.test(tag)) return [];
     const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : tag;
     return [
       {
@@ -250,14 +251,16 @@ export class DesktopUpdater {
     private readonly feedFetcher: typeof fetch = fetch,
   ) {
     const supported = this.updatesSupported();
-    // Store builds are stable-only, so they expose no channel to switch.
-    const selectable = supported && distribution !== 'microsoft-store';
+    // Store builds are stable-only, so they expose no channel to switch. A dev
+    // run cannot update itself but still shows and saves the channel.
+    const selectable = (supported || !app.isPackaged) && distribution !== 'microsoft-store';
     if (selectable) this.channel = readSavedUpdateChannel();
     this.state = {
       status: supported ? 'idle' : 'unsupported',
-      currentVersion: app.getVersion(),
+      currentVersion: __APP_VERSION__,
       progress: 0,
       channel: selectable ? this.channel : undefined,
+      unsupportedReason: this.unsupportedReason() ?? undefined,
     };
     if (!supported) return;
 
@@ -461,6 +464,10 @@ export class DesktopUpdater {
       return this.snapshot();
     this.channel = channel;
     saveUpdateChannel(channel);
+    if (!this.updatesSupported()) {
+      this.patch({ channel });
+      return this.snapshot();
+    }
     this.state = {
       status: 'idle',
       currentVersion: this.state.currentVersion,
@@ -494,7 +501,11 @@ export class DesktopUpdater {
   }
 
   private updatesSupported(): boolean {
-    return applicationUpdatesSupported(app.isPackaged, this.distribution);
+    return this.unsupportedReason() === null;
+  }
+
+  private unsupportedReason() {
+    return applicationUpdatesUnsupportedReason(app.isPackaged, this.distribution);
   }
 
   private patch(value: Partial<UpdateState>): void {

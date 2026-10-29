@@ -8,6 +8,7 @@ import {
 } from '@shared/utils/aec/pcm';
 import {
   classifySherpaFinal,
+  joinDictationText,
   sherpaSummaryTail,
 } from '@shared/utils/captureProtocol';
 import type { TranscriptEntry } from '@shared/utils/transcriptionsStore';
@@ -236,7 +237,7 @@ export class LiveDictation {
     }
     if (message.type === 'partial') {
       this.publish({
-        text: [...this.committed, message.text || ''].filter((part) => part.trim()).join(' '),
+        text: joinDictationText([...this.committed, message.text || '']),
       });
       return;
     }
@@ -249,7 +250,7 @@ export class LiveDictation {
       const clean = text.trim();
       if (!clean) return;
       this.committed.push(clean);
-      this.publish({ text: this.committed.join(' ') });
+      this.publish({ text: joinDictationText(this.committed) });
       try {
         this.onResult(message);
       } catch {
@@ -259,7 +260,7 @@ export class LiveDictation {
     }
     if (kind === 'ignore') return;
     const tail = sherpaSummaryTail(message.text || '', this.committed);
-    this.publish({ text: text || this.committed.join(' ') });
+    this.publish({ text: text || joinDictationText(this.committed) });
     try {
       if (tail)
         this.onResult(

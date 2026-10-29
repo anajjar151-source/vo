@@ -27,6 +27,8 @@ GitHub Sponsors is the checkout; its tier names and prices follow this table. Ti
 | **Company Sponsor** | $500 | A logo and link on the [project website](https://voicestudio.sh). |
 | **Strategic Sponsor** | $1,000 | A 30-minute feedback call each quarter. Feedback is welcome; it does not set the roadmap. |
 
+The same tiers are published machine-readably in [`funding.json`](funding.json) ([funding.json](https://fundingjson.org) format); keep the two in step.
+
 Recognition appears only on surfaces that exist today: this file, the README and the website. New surfaces are added to existing sponsors when they ship.
 
 ### How recognition works
@@ -87,11 +89,9 @@ By sponsoring you confirm you have the right to use the submitted logo and grant
 
 ## Current sponsors
 
-VoiceStudio doesn't have any sponsors listed yet — **you could be the first.**
-
 ### Strategic and Company sponsors
 
-_Open._
+<a href="https://supermetry.com/?utm_source=voicestudio&utm_medium=sponsor&utm_campaign=strategic-sponsor&utm_content=sponsor-list-logo"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/supermetry-dark.svg" /><img src="docs/sponsors/supermetry.svg" alt="Supermetry" height="48" /></picture></a>
 
 ### Development sponsors
 
@@ -106,7 +106,8 @@ _Open._
 _Open._
 
 <!-- When a sponsor is verified, add them to the matching section above:
-     - Logo tiers ($100+):  <a href="https://sponsor.example"><img src="docs/sponsors/name.svg" alt="Name" height="48" /></a>
+     - Logo tiers ($100+):  <a href="https://sponsor.example"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/name-dark.svg" /><img src="docs/sponsors/name.svg" alt="Name" height="48" /></picture></a>
+     Keep the in-app roster (electron/src/shared/config/sponsors.js) in step; tests/test_sponsors_lockstep.py checks it.
      - Name tiers:          - [Name / handle](https://link)  -->
 
 ---

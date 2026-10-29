@@ -57,7 +57,7 @@ export function AccountMenu({ className }: { className?: string }) {
         variant="outline"
         disabled={state.signingIn}
         onClick={() => void signIn()}
-        className={cn('h-8 rounded-full', className)}
+        className={cn('h-7 rounded-full', className)}
       >
         {t(state.signingIn ? 'account.continue_in_browser' : 'account.sign_in')}
       </Button>

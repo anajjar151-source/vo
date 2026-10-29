@@ -86,10 +86,12 @@ The main workspace sidebar stays visible on Settings routes, including while the
 
 ## Navigation order
 
-In the expanded sidebar, workspace navigation sits immediately below the header and above the voice library. The status bar and Settings entry remain at the bottom; voice-library scrolling does not move the navigation.
+The expanded sidebar is a slim 216px column: workspace navigation sits immediately below the header, and the status bar and Settings entry stay at the bottom. On macOS the window's traffic lights get their own row above the brand; in full screen the brand moves into that corner. The status area is a slim speed/quality slider (a tier icon, the tier name and an icon-only Auto toggle); hovering or clicking the label, or changing the slider, opens a popover with the model for each engine, the hardware fit and the Simple/Models/Details view switch.
+
+Saved voices and Recent takes live in a context sidebar beside the navigation on Home and Clone (and as a Saved voices tab in the Design pane), so the navigation never carries a library. Any section that brings its own pane keeps navigation as the icon rail below, as in VS Code, Slack and Linear, so the window does not show two wide sidebars. The rail's gauge button opens the same speed/quality popover.
 
 In the compact rail, Voice, Stories and Dubbing open flyouts on mouse hover or click, with full-row click targets. Hover uses a short opening delay and a pointer transit delay into the flyout; touch users can click, and keyboard users can press Enter or Arrow Right/Down to open it, then Arrow Left or Escape to return to the trigger. Choosing a destination keeps its flyout mounted until the route changes; choosing the current destination closes it immediately. Outside clicks close flyouts. Double-clicking the compact rail expands the full sidebar; the header button remains the single-click control. The flyout appears beside its icon without a scale shift while the pointer moves into it.
 
 ## Sidebar expansion preference
 
-Settings → Appearance → Keep sidebar expanded persists the choice locally. It disables automatic compaction on narrower secondary-pane workspaces; the default remains automatic. The explicit close control still works, and the Profiles workspace still avoids duplicating its voice library. The header toggle and sidebar share one state. A compact rail can reopen itself on every desktop platform, using the brand icon on Windows/Linux.
+Settings → Appearance → Keep sidebar expanded persists the choice locally. It disables automatic compaction beside a section pane and on narrow windows. With the default automatic setting, windows up to 1200px wide use the rail. The explicit close control still works. The header toggle and sidebar share one state. A compact rail can reopen itself on every desktop platform, using the brand icon on Windows/Linux.

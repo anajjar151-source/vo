@@ -28,6 +28,9 @@ jobs:
     timeout-minutes: 40
     # Holds the Play secrets; restrict it to `main` in repository settings.
     environment: google-play
+    concurrency:
+      group: signed-android-builds
+      cancel-in-progress: false
     defaults:
       run:
         working-directory: mobile/android
@@ -72,8 +75,9 @@ jobs:
           VOICESTUDIO_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           VOICESTUDIO_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
-          # Unique and increasing per upload, including reruns of the same run.
-          export VOICESTUDIO_ANDROID_VERSION_CODE=$(( GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT ))
+          # Shared clock and serialized builds keep codes increasing across both release workflows.
+          export VOICESTUDIO_ANDROID_VERSION_CODE="$(python3 "$GITHUB_WORKSPACE/scripts/android_version_code.py")"
+          test -n "$VOICESTUDIO_ANDROID_VERSION_CODE"
           ./gradlew --no-daemon :app:bundleRelease
 
       - name: Verify bundle signature

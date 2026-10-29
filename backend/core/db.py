@@ -57,6 +57,7 @@ _BASE_SCHEMA = """
         consent_recorded_at REAL DEFAULT NULL,
         kind TEXT DEFAULT 'clone',
         vd_states TEXT DEFAULT NULL,
+        design_recipe TEXT DEFAULT NULL,
         created_at REAL,
         sync_id TEXT DEFAULT NULL,
         consent_basis TEXT DEFAULT '',
@@ -140,7 +141,9 @@ _BASE_SCHEMA = """
         created_at REAL NOT NULL,
         payload TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_job_events_job_seq ON job_events(job_id, seq);
+    -- The unique (job_id, seq) index is NOT created here: on a DB that still
+    -- holds duplicate pairs it would fail inside executescript and stop
+    -- startup. _ensure_job_events_unique_seq renumbers first, then creates it.
 
     -- Phase 1 AUTH-02: encrypted per-install key/value store. Used today
     -- for the HF token row + the per-install Fernet salt. Both fresh
@@ -432,6 +435,44 @@ def _reconcile_additive_columns(conn) -> None:
         canon.close()
 
 
+def _ensure_job_events_unique_seq(conn) -> None:
+    """Renumber duplicate (job_id, seq) events, then enforce uniqueness.
+
+    Mirrors alembic 0016 for installs where alembic cannot run. Duplicates came
+    from the old non-atomic writer; each is a real event, so rows are
+    renumbered in arrival order (seq, id) from the job's lowest seq, never
+    deleted. Jobs without a duplicate are untouched. Never raises: an index
+    that cannot be built must not stop startup.
+    """
+    try:
+        dup_jobs = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT job_id FROM job_events GROUP BY job_id, seq HAVING COUNT(*) > 1"
+            )
+        ]
+        for job_id in dup_jobs:
+            rows = conn.execute(
+                "SELECT id, seq FROM job_events WHERE job_id = ? ORDER BY seq, id", (job_id,)
+            ).fetchall()
+            base = rows[0][1]
+            conn.executemany(
+                "UPDATE job_events SET seq = ? WHERE id = ?",
+                [(base + offset, row[0]) for offset, row in enumerate(rows)],
+            )
+        if dup_jobs:
+            logger.info("job_events: renumbered duplicate seqs for %d job(s)", len(dup_jobs))
+        conn.execute("DROP INDEX IF EXISTS idx_job_events_job_seq")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_job_events_job_seq_unique "
+            "ON job_events(job_id, seq)"
+        )
+        conn.commit()
+    except sqlite3.Error as exc:
+        conn.rollback()
+        logger.warning("job_events unique-seq repair failed: %s", exc)
+
+
 def ensure_schema() -> None:
     """Idempotently ensure the base tables + additive columns exist.
 
@@ -447,6 +488,7 @@ def ensure_schema() -> None:
     try:
         conn.executescript(_BASE_SCHEMA)
         _reconcile_additive_columns(conn)
+        _ensure_job_events_unique_seq(conn)
         conn.commit()
     finally:
         conn.close()
@@ -465,6 +507,7 @@ def init_db():
         # (consent_audio_path, kind, ...). Runs regardless of whether alembic
         # below succeeds, so an unrunnable alembic can't leave a 500-ing schema.
         _reconcile_additive_columns(conn)
+        _ensure_job_events_unique_seq(conn)
         conn.commit()
     finally:
         conn.close()

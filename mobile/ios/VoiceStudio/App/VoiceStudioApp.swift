@@ -21,8 +21,11 @@ import VoiceStudioKit
                 .onChange(of: phase) { _, phase in
                     if phase == .active {
                         model.acceptUpload()
+                        PhoneInbox.shared.collect()
                         model.monitor()
-                    } else if phase == .background { BackgroundMonitor.schedule() }
+                        Task { await model.phone.refresh() }
+                    } else if phase == .inactive { PhoneJobs.shared.enteredInactive() }
+                    else if phase == .background { PhoneJobs.shared.enteredBackground(); BackgroundMonitor.schedule() }
                 }
         }
     }

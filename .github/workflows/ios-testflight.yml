@@ -17,7 +17,8 @@ concurrency:
 jobs:
   testflight:
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-15
+    # App Store Connect only accepts builds from the current iOS SDK (Xcode 26+).
+    runs-on: macos-26
     timeout-minutes: 60
     # Holds the App Store Connect secrets; restrict it to `main` in repository settings.
     environment: app-store-connect
@@ -39,6 +40,22 @@ jobs:
           for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY TEAM_ID; do
             test -n "${!name}" || { echo "Missing $name; see docs/mobile.md → TestFlight"; exit 1; }
           done
+
+      # iOS xcframeworks for the pinned on-device runtimes (sherpa-onnx, onnxruntime,
+      # llama.cpp, omnivoice.cpp); needs Xcode, so it only runs here.
+      - name: Cache native runtimes
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mobile/native/ios/build
+          key: ios-native-${{ hashFiles('mobile/native/pins.json', 'mobile/native/ios/**', '!mobile/native/ios/build/**') }}
+
+      - name: Build native runtimes
+        env:
+          # Read-only token: avoids the anonymous GitHub API rate limit on shared runners.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          brew install cmake ninja 2>/dev/null || true
+          bash mobile/native/ios/build.sh ios
 
       - name: Generate Xcode project
         run: |
@@ -71,12 +88,24 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
             archive
 
+      # Automatic signing archives with the team's development identity; the
+      # export below re-signs for App Store distribution and App Store Connect
+      # rejects anything else. The archive must still be validly signed by this team.
       - name: Verify archive signature and version
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           APP="$RUNNER_TEMP/VoiceStudio.xcarchive/Products/Applications/VoiceStudio.app"
           codesign --verify --deep --strict "$APP"
-          codesign -dvv "$APP" 2>&1 | grep -q '^Authority=Apple Distribution:'
+          codesign -dvv "$APP" 2>&1 | grep -qx "TeamIdentifier=$TEAM_ID"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP/Info.plist")" = "$VOICESTUDIO_IOS_BUILD_NUMBER"
+          # App Store Connect rejects any embedded framework without both version keys.
+          for plist in "$APP"/Frameworks/*.framework/Info.plist; do
+            [ -e "$plist" ] || continue
+            for key in CFBundleShortVersionString CFBundleVersion; do
+              /usr/libexec/PlistBuddy -c "Print $key" "$plist" >/dev/null || { echo "$plist is missing $key"; exit 1; }
+            done
+          done
 
       - name: Upload to TestFlight
         env:

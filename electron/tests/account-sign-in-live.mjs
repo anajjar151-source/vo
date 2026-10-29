@@ -1,6 +1,6 @@
 // Live smoke for VoiceStudio Cloud sign-in against the dev realm. Needs a built app
 // (`bun run build`), a display (xvfb-run on Linux) and network access to dev-app.voicestudio.sh.
-// It stops at the Keycloak login page: finishing sign-in needs a dev test account.
+// It stops at the sign-in page (Zitadel + idlogin): finishing sign-in needs a dev test account.
 import { _electron as electron } from "playwright";
 import { mkdtempSync } from "node:fs";
 import { connect } from "node:net";
@@ -9,7 +9,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 
-const ISSUER = "https://dev-app.voicestudio.sh/identity/realms/vssaas";
+const ISSUER = "https://dev-id.voicestudio.sh";
+const CLIENT_ID = "396555644615786670";
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable =
   process.platform === "win32"
@@ -44,7 +45,7 @@ const app = await electron.launch({
     ...launchEnvironment,
     ELECTRON_RENDERER_URL: "",
     VOICESTUDIO_CLOUD_ENV: "dev",
-    VOICESTUDIO_ELECTRON_PROXY_PORT: "49305",
+    VOICESTUDIO_ELECTRON_PROXY_PORT: "0",
     VOICESTUDIO_SKIP_BACKEND: "1",
     VOICESTUDIO_ALLOW_MULTIPLE_INSTANCES: "1",
   },
@@ -109,7 +110,7 @@ try {
       path: join(screenshots, "account-signed-out.png"),
     });
 
-  // Sign in: discovery against the dev realm, then a PKCE authorize URL to a loopback redirect.
+  // Sign in: discovery against the dev Zitadel, then a PKCE authorize URL to a loopback redirect.
   await signIn.click();
   await page.waitForFunction(
     async () => (await window.voicestudio.account.get()).signingIn,
@@ -123,9 +124,9 @@ try {
   const url = new URL(authorize);
   assert.equal(
     `${url.origin}${url.pathname}`,
-    `${ISSUER}/protocol/openid-connect/auth`,
+    `${ISSUER}/oauth/v2/authorize`,
   );
-  assert.equal(url.searchParams.get("client_id"), "voicestudio-desktop-oss");
+  assert.equal(url.searchParams.get("client_id"), CLIENT_ID);
   assert.equal(url.searchParams.get("response_type"), "code");
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");
   assert.match(
@@ -144,16 +145,17 @@ try {
       path: join(screenshots, "account-signing-in.png"),
     });
 
-  // The realm accepts this client and loopback redirect: Keycloak serves its login form.
+  // Zitadel accepts this client and loopback redirect and hands over to the
+  // sign-in page (idlogin) on the same host.
   const login = await fetch(authorize, { redirect: "follow" });
   const html = await login.text();
   assert.equal(login.status, 200, `authorize page answered ${login.status}`);
-  const pageId = html.match(/"pageId":\s*"([^"]+)"/)?.[1];
-  assert.match(
-    pageId ?? "",
-    /^login/,
-    `Keycloak showed "${pageId}" instead of its login form`,
+  assert.equal(
+    new URL(login.url).pathname,
+    "/login",
+    `authorize ended at ${login.url} instead of the sign-in page`,
   );
+  assert.match(html, /<form/i, "the sign-in page has no form");
 
   // Off again: sign-in is abandoned and the listener closes at once, with no restart.
   state = await account("setSwitches", { accountEnabled: false });

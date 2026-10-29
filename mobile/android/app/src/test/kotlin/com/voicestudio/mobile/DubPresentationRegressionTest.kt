@@ -68,13 +68,13 @@ class DubPresentationRegressionTest {
         content {MultiPicker("mobile.dub.target_languages",emptyList(),listOf("fr" to "French")) {}}
         compose.onNodeWithText("Target languages").performClick()
         compose.onNodeWithText("Search").performTextInput("missing")
-        compose.onNodeWithText("No matches for \"missing\"").assertExists()
+        compose.onNodeWithText("No matches for “missing”.").assertExists()
     }
     @Test fun voicesSearchWithoutMatchesShowsQuery() {
         withHost {vm ->
             content {VoicesScreen(vm)}
             compose.onNodeWithText("Search voices").performScrollTo().performTextInput("missing")
-            compose.onNodeWithText("No matches for \"missing\"").assertExists()
+            compose.onNodeWithText("No matches for “missing”.").assertExists()
         }
     }
     @Test fun speakRendersControlsWhileLanguageCatalogIsSuspended() {
@@ -99,7 +99,7 @@ class DubPresentationRegressionTest {
                     awaitCancellation()
                 }) {VoiceStudioTheme {DubScreen(vm)}}
             }
-            compose.onNodeWithText("Dub").assertExists()
+            compose.onNode(hasText("Dub") and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Heading)).assertExists()
             compose.onNodeWithText("Loading…").assertExists()
             compose.onNodeWithText("Paste a link").assertExists()
         }
@@ -110,7 +110,10 @@ class DubPresentationRegressionTest {
                 CompositionLocalProvider(LocalLanguageCatalogLoader provides {awaitCancellation()}) {StudioApp(vm)}
             }
             for(tab in listOf("Speak","Voices","Dub","Dictate","Settings","Speak")) {
-                compose.onNode(hasText(tab) and hasClickAction()).performClick()
+                if(tab=="Speak") {
+                    compose.onNode(hasText("Home") and hasClickAction()).performClick()
+                    compose.onNodeWithTag("home.speak").performScrollTo().performClick()
+                } else compose.onNode(hasText(tab) and hasClickAction()).performClick()
                 compose.onNode(hasText(tab) and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Heading)).assertExists()
             }
         }

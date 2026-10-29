@@ -45,7 +45,8 @@ export function AccountCorner({ notificationsEnabled }: { notificationsEnabled: 
       ref={host}
       data-slot="account-corner"
       className={cn(
-        'app-no-drag fixed top-2.5 z-50 flex items-center gap-1.5',
+        // Spans the 52px title bar so the corner centres on the same line as every header control.
+        'app-no-drag fixed top-0 z-50 flex h-[52px] items-center gap-1',
         isMac() ? 'right-3.5' : 'right-[148px]',
       )}
     >

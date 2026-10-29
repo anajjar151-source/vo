@@ -492,7 +492,7 @@ export function registerIpc(
       await supervisor.shutdown();
       stopped = true;
       await new Promise((resolve) => setTimeout(resolve, 600));
-      await scheduleUninstallCleanup(plan.paths);
+      await scheduleUninstallCleanup(plan.targets);
       await exitForUninstall();
       return { scheduled: true, size_bytes: plan.size_bytes };
     } catch (error) {

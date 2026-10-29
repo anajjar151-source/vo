@@ -114,7 +114,7 @@ def test_snap_upload_releases_candidate_only_for_the_newest_tag(tmp_path, tag, n
     )
     step = next(s for s in workflow["jobs"]["upload"]["steps"] if s.get("name") == "Upload to candidate")
     (tmp_path / "artifact").mkdir()
-    (tmp_path / "artifact" / "VoiceStudio-Electron-0.5.8-linux-x64.snap").write_text("")
+    (tmp_path / "artifact" / "VoiceStudio-0.5.8-linux-x64.snap").write_text("")
     log = tmp_path / "calls"
     tags = "".join(f"abc\trefs/tags/{t}\n" for t in ["v0.5.7", newest] if t)
     stubs = {
@@ -191,7 +191,7 @@ def test_release_preserves_authored_announcement_and_contributors(monkeypatch, t
     assets = tmp_path / "assets"
     assets.mkdir()
     for suffix in ("mac-arm64.dmg", "mac-x64.dmg", "linux-x64.deb"):
-        (assets / f"VoiceStudio-Electron-1.2.3-{suffix}").write_bytes(b"fixture")
+        (assets / f"VoiceStudio-1.2.3-{suffix}").write_bytes(b"fixture")
     module.prepare(assets, "v1.2.3")
     assert (assets / "RELEASE_NOTES.md").read_text() == notes
 
@@ -238,7 +238,9 @@ def test_electron_release_scopes_signing_secrets_and_gates_unsigned_owner_dispat
     assert [step["name"] for step in scoped] == ["Package without publishing"]
     assert credentials.issubset(scoped[0]["env"])
     guard = next(step for step in jobs["validate"]["steps"] if step.get("name") == "Require an exact version tag")
-    assert 'test "$DISPATCH_ACTOR" = "$OWNER" && test "$RERUN_ACTOR" = "$OWNER"' in guard["run"]
+    # Who may publish unsigned is exercised in test_unsigned_publish_needs_owner_or_listed_publisher.
+    assert 'may_publish_unsigned "$DISPATCH_ACTOR" && may_publish_unsigned "$RERUN_ACTOR"' in guard["run"]
+    assert guard["env"]["OWNER"] == "${{ github.repository_owner }}"
     assert guard["env"]["DISPATCH_ACTOR"] == "${{ github.actor }}"
     assert guard["env"]["RERUN_ACTOR"] == "${{ github.triggering_actor }}"
     publish = jobs["release"]["steps"][-1]
@@ -263,7 +265,7 @@ def test_packaging_omits_empty_signing_credentials(tmp_path, credentials, expect
     env = {k: v for k, v in os.environ.items() if k not in {'CSC_LINK', 'CSC_KEY_PASSWORD'}}
     env.update(credentials)
     capture = tmp_path / 'signing-env'
-    env.update(PATH=str(tmp_path) + os.pathsep + env['PATH'], CAPTURE_PATH=str(capture))
+    env.update(PATH=str(tmp_path) + os.pathsep + env['PATH'], CAPTURE_PATH=str(capture), RUNNER_TEMP=str(tmp_path))
     script = step['run'].replace('${{ matrix.flags }}', '--mac --arm64').replace('${{ matrix.platform }}', 'darwin').replace('${{ matrix.arch }}', 'arm64')
     subprocess.run(['bash', '-e', '-c', script], env=env, check=True)
     assert capture.read_text() == expected
@@ -293,5 +295,33 @@ def test_release_tag_override_preserves_exact_tag_checkout(tmp_path, workflow_re
     env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ['PATH'], REF=ref,
                WORKFLOW_REF=workflow_ref, RELEASE_TAG_OVERRIDE=override, ALLOW_UNSIGNED='false',
                TEST_HEAD='tagged' if head_matches else 'different')
+    result = subprocess.run(['bash', '-e', '-c', guard['run']], env=env, capture_output=True)
+    assert (result.returncode == 0) == ok, result.stderr
+
+
+@pytest.mark.parametrize('publishers,dispatcher,rerunner,ok', [
+    ('', 'owner', 'owner', True),
+    ('', 'maintainer', 'maintainer', False),
+    ('maintainer', 'maintainer', 'maintainer', True),
+    (' other , maintainer ', 'maintainer', 'maintainer', True),
+    ('maintainer', 'maintainer', 'stranger', False),
+    ('maintainer', 'stranger', 'maintainer', False),
+    ('maint', 'maintainer', 'maintainer', False),
+    ('maintainer,', '', '', False),
+])
+def test_unsigned_publish_needs_owner_or_listed_publisher(tmp_path, publishers, dispatcher, rerunner, ok):
+    import os
+    import subprocess
+    import yaml
+    workflow = yaml.load((ROOT / '.github/workflows/electron-release.yml').read_text(), Loader=yaml.BaseLoader)
+    for name, body in [('node', 'echo 1.2.3'), ('git', 'echo tagged')]:
+        executable = tmp_path / name
+        executable.write_text('#!/bin/sh\n' + body + '\n')
+        executable.chmod(0o755)
+    guard = next(s for s in workflow['jobs']['validate']['steps'] if 'run' in s)
+    assert guard['env']['UNSIGNED_PUBLISHERS'] == '${{ vars.UNSIGNED_RELEASE_PUBLISHERS }}'
+    env = dict(os.environ, PATH=str(tmp_path) + os.pathsep + os.environ['PATH'], REF='refs/tags/v1.2.3',
+               WORKFLOW_REF='refs/tags/v1.2.3', RELEASE_TAG_OVERRIDE='', ALLOW_UNSIGNED='true',
+               OWNER='owner', UNSIGNED_PUBLISHERS=publishers, DISPATCH_ACTOR=dispatcher, RERUN_ACTOR=rerunner)
     result = subprocess.run(['bash', '-e', '-c', guard['run']], env=env, capture_output=True)
     assert (result.returncode == 0) == ok, result.stderr

@@ -6,7 +6,12 @@ import { AccountController, registerAccountIpc } from './account-ipc';
 import { AccountSession } from './account-session';
 import { startAccountTokenBridge } from './account-token-bridge';
 import { CloudActivity } from './cloud-activity';
-import { cloudAccountsAvailable, cloudOrigins, resolveCloudEnvironment } from './cloud-config';
+import {
+  cloudAccountsAvailable,
+  cloudOrigins,
+  dashboardLinks,
+  resolveCloudEnvironment,
+} from './cloud-config';
 import { CloudSwitchStore } from './cloud-switches';
 import { startLoopback } from './loopback';
 import { OidcClient } from './oidc';
@@ -43,6 +48,7 @@ async function wireAccount(opts: StartOptions): Promise<() => void> {
   const env = resolveCloudEnvironment({
     packaged: app.isPackaged,
     requested: process.env.VOICESTUDIO_CLOUD_ENV,
+    clientId: process.env.VOICESTUDIO_CLOUD_CLIENT_ID,
   });
   const switches = new CloudSwitchStore(join(app.getPath('userData'), 'cloud-switches.json'));
   const allowed = () => available && switches.get().accountEnabled;
@@ -74,6 +80,7 @@ async function wireAccount(opts: StartOptions): Promise<() => void> {
     session,
     api,
     remembered: store.persistent,
+    links: dashboardLinks(env),
   });
   const closeIpc = registerAccountIpc(ctl, session, opts.getMainWindow);
   if (!available)

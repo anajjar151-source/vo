@@ -26,6 +26,7 @@ export const SUPPORTED_LOCALES = [
   'uk',
   'ar',
   'zh-TW',
+  'gl',
 ] as const;
 
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number];

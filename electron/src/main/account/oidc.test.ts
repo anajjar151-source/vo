@@ -4,12 +4,13 @@ import { CloudActivity, type FetchImpl } from './cloud-activity';
 import { cloudOrigins, resolveCloudEnvironment } from './cloud-config';
 import { InvalidGrantError, OidcClient, TransientAuthError, base64url, createPkce } from './oidc';
 
-const env = resolveCloudEnvironment({ packaged: true });
+// The dev environment carries a fixed Zitadel client ID (prod's arrives at build time).
+const env = resolveCloudEnvironment({ packaged: false, requested: 'dev' });
 const discovery = {
   issuer: env.issuer,
-  authorization_endpoint: `${env.issuer}/protocol/openid-connect/auth`,
-  token_endpoint: `${env.issuer}/protocol/openid-connect/token`,
-  revocation_endpoint: `${env.issuer}/protocol/openid-connect/revoke`,
+  authorization_endpoint: `${env.issuer}/oauth/v2/authorize`,
+  token_endpoint: `${env.issuer}/oauth/v2/token`,
+  revocation_endpoint: `${env.issuer}/oauth/v2/revoke`,
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -54,7 +55,7 @@ it('builds the authorize URL from the contract', () => {
     }),
   );
   expect(Object.fromEntries(url.searchParams)).toEqual({
-    client_id: 'voicestudio-desktop-oss',
+    client_id: env.clientId,
     response_type: 'code',
     redirect_uri: 'http://127.0.0.1:5000/callback',
     scope: 'openid offline_access',
@@ -73,6 +74,29 @@ it('rejects a token response without offline_access', async () => {
   await expect(
     client(fetchImpl).exchangeCode('c', 'http://127.0.0.1:1/callback', 'v'),
   ).rejects.toThrow(/offline_access/);
+});
+
+it('accepts a token response that omits scope, as Zitadel does', async () => {
+  // RFC 6749 section 5.1: scope is optional when it equals what was requested.
+  const fetchImpl = vi.fn(async (u: string) =>
+    u.endsWith('openid-configuration')
+      ? json(discovery)
+      : json({ access_token: 'a', refresh_token: 'r', expires_in: 300, token_type: 'Bearer' }),
+  );
+  await expect(
+    client(fetchImpl).exchangeCode('c', 'http://127.0.0.1:1/callback', 'v'),
+  ).resolves.toMatchObject({ access_token: 'a', refresh_token: 'r' });
+});
+
+it('rejects a token response without a refresh token', async () => {
+  const fetchImpl = vi.fn(async (u: string) =>
+    u.endsWith('openid-configuration')
+      ? json(discovery)
+      : json({ access_token: 'a', expires_in: 300, scope: 'openid offline_access' }),
+  );
+  await expect(
+    client(fetchImpl).exchangeCode('c', 'http://127.0.0.1:1/callback', 'v'),
+  ).rejects.toThrow(/refresh token/);
 });
 
 it('maps refresh errors: invalid_grant vs transient', async () => {
@@ -101,7 +125,7 @@ it('sends form-encoded refresh with the public client id and no secret', async (
   const body = new URLSearchParams(String(fetchImpl.mock.calls[1][1]!.body));
   expect(Object.fromEntries(body)).toEqual({
     grant_type: 'refresh_token',
-    client_id: 'voicestudio-desktop-oss',
+    client_id: env.clientId,
     refresh_token: 'r1',
   });
 });

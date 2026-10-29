@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { MarkdownLite } from '@/components/markdown-lite';
+import { InlineMarkdown, MarkdownLite } from '@/components/markdown-lite';
 import { appVersion, getBridge } from '@/components/bridge';
 import { dubSession, flushDubDraft, useDubSession } from '@/features/dub/dub-session';
 import { hasActiveAppWork, useAppActivityCount } from '@/lib/app-activity';
@@ -57,6 +57,16 @@ const serverWorkActive = (models?: ModelInstallJobs, batches?: unknown[]) =>
       ['queued', 'downloading', 'running', 'installing'].includes(job.state),
     ) || batches?.length,
   );
+
+// No reason means no desktop bridge: the browser UI, which never self-updates.
+const unsupportedMessageKey = (reason: UpdateState['unsupportedReason']) =>
+  reason === 'development'
+    ? 'settings.updater_development'
+    : reason === 'package-manager'
+      ? 'settings.updater_package_manager'
+      : reason === 'store'
+        ? 'settings.updater_store'
+        : 'settings.updater_desktop';
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -219,7 +229,7 @@ export function UpdateSettings() {
                     ? t('update.ready', { version: state.availableVersion || '' })
                     : t('update.available', { version: state.availableVersion || '' })
                   : state.status === 'unsupported'
-                    ? t('settings.updater_desktop')
+                    ? t(unsupportedMessageKey(state.unsupportedReason))
                     : state.status === 'checking'
                       ? t('update.checking')
                       : state.status === 'downloading'
@@ -402,11 +412,7 @@ export function UpdateSettings() {
                     )}
                   </summary>
                   <div className="mt-3 space-y-4 pl-6 text-xs leading-5 text-muted-foreground">
-                    {release.intro && (
-                      <p className="font-medium text-foreground">
-                        {release.intro.replaceAll('**', '')}
-                      </p>
-                    )}
+                    {release.intro && <MarkdownLite text={release.intro} />}
                     {release.sections?.map((section, sectionIndex) => (
                       <section key={`${section.title || 'notes'}-${sectionIndex}`}>
                         {section.title && (
@@ -414,7 +420,9 @@ export function UpdateSettings() {
                         )}
                         <ul className="list-disc space-y-1.5 pl-4">
                           {section.bullets.map((bullet, bulletIndex) => (
-                            <li key={bulletIndex}>{bullet}</li>
+                            <li key={bulletIndex}>
+                              <InlineMarkdown text={bullet} />
+                            </li>
                           ))}
                         </ul>
                       </section>

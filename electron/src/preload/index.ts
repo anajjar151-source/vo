@@ -68,6 +68,8 @@ const bridge: VoiceStudioBridge = {
     platform: process.platform,
     isDev: process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_RENDERER_URL,
     onNavigate: (callback) => subscribe<string>('app:navigate', callback),
+    isFullScreen: () => ipcRenderer.invoke('app:is-fullscreen'),
+    onFullScreen: (callback) => subscribe<boolean>('app:fullscreen', callback),
     onPersistenceFlush: (callback) => {
       const listener = (_event: IpcRendererEvent, token: string) => {
         void (async () => {

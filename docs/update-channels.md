@@ -63,8 +63,8 @@ database schema upgrade, VoiceStudio:
 1. **Backs up the database first** — a consistent snapshot is written next to
    it as `omnivoice.db.backup-<version>-<n>` before any migration runs. The
    newest **3** backups are kept; older ones are pruned automatically.
-   A snapshot interrupted mid-copy leaves a `.part-<pid>` file that is never
-   treated as a backup and is removed on the next snapshot.
+   An interrupted copy leaves a `.part-<pid>` temporary file. Partial files are
+   never shown as backups, and the next snapshot removes abandoned ones.
    (Databases over 500 MB skip the snapshot, with a log line saying so.)
 2. **Stops instead of guessing** — if a migration fails midway, the app does
    *not* start on a half-migrated database and does *not* silently restore

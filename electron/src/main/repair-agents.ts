@@ -4,15 +4,7 @@ import {
   spawnSync,
   type ChildProcessWithoutNullStreams,
 } from 'node:child_process';
-import {
-  accessSync,
-  constants,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
@@ -20,9 +12,14 @@ import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'el
 import type { BackendSupervisor } from './backend';
 import { startRepairApiBridge, type RepairApiBridge } from './repair-api-bridge';
 import { isTrustedRenderer } from './trusted-renderer';
-import { agentUsesAppWorkspace, featureGuidance, validateAgentWorkspace } from '../shared/agent-workspace';
+import {
+  agentUsesAppWorkspace,
+  featureGuidance,
+  validateAgentWorkspace,
+} from '../shared/agent-workspace';
 import { envWithToolPath } from './tool-path';
 import { sendToLiveWindow } from './window-safety';
+import { inspectSourceCheckout, isVoiceStudioCheckout } from './source-checkout';
 import { startLlmAgentBridge } from './llm-agent-bridge';
 import type {
   RepairAgentEvent,
@@ -194,13 +191,12 @@ export function probe(executable: string, args: string[]): Promise<ProbeResult> 
 async function locate(command: string): Promise<LaunchCommand | null> {
   const finder = process.platform === 'win32' ? 'where.exe' : 'which';
   const found = await probe(finder, [command]);
-  const paths =
-    found.ok
-      ? found.stdout
-          .split(/\r?\n/)
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : [];
+  const paths = found.ok
+    ? found.stdout
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
   const native = paths.find((item) => ['.exe', '.com'].includes(extname(item).toLowerCase()));
   if (process.platform === 'win32' && native) return { executable: native, prefix: [] };
   if (process.platform !== 'win32' && paths[0]) {
@@ -314,24 +310,6 @@ export function launchArgs(
 export function openCodePromptArgs(promptFile: string): string[] {
   // OpenCode's --file option is variadic, so the positional message must come first.
   return ['Follow the attached VoiceStudio repair request.', '--file', promptFile];
-}
-
-function isVoiceStudioCheckout(path: string): boolean {
-  const complete = [
-    '.git',
-    'AGENTS.md',
-    'CLAUDE.md',
-    'backend/main.py',
-    'electron/package.json',
-    'package.json',
-  ].every((entry) => existsSync(join(path, entry)));
-  if (!complete) return false;
-  try {
-    accessSync(path, constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function savedWorkspace(): string | null {
@@ -708,7 +686,7 @@ ${appOperationRules}
 ${finish}
 
 ## Selected VoiceStudio features
-${request.features?.map(feature => `${feature}: ${featureGuidance[feature]}`).join('\n') || 'Discover available features using GET /openapi.json.'}
+${request.features?.map((feature) => `${feature}: ${featureGuidance[feature]}`).join('\n') || 'Discover available features using GET /openapi.json.'}
 Feature selection supplies task context, not authorization to perform unrelated operations. Never claim a generation or repair succeeded without verifying the output or live state. Keep the conversation concise and readable; report generated project IDs or output paths so later turns can continue the work.
 
 ## Previous conversation (context only)
@@ -794,17 +772,21 @@ export async function registerRepairAgents(
       properties: ['openDirectory'],
     });
     if (picked.canceled || !picked.filePaths[0]) return state;
-    const selected = resolve(picked.filePaths[0]);
-    if (!isVoiceStudioCheckout(selected)) throw new Error('invalid_source_checkout');
-    workspaceRoot = selected;
-    persistWorkspace(selected);
-    state = { ...state, workspaceAvailable: true, workspacePath: selected };
+    const checkout = inspectSourceCheckout(picked.filePaths[0]);
+    // A rejected pick keeps any previously attached checkout and says why.
+    if (!checkout.ok) return { ...state, workspaceError: checkout.reason };
+    workspaceRoot = checkout.root;
+    persistWorkspace(checkout.root);
+    state = { ...state, workspaceAvailable: true, workspacePath: checkout.root };
     return state;
   });
   const busy = () => Boolean(child || translationChild || preparing || translationLaunch);
   ipcMain.handle(REPAIR_CHANNELS.start, async (event, request: RepairAgentRunRequest) => {
     trusted(event, getMainWindow());
-    if (busy()) throw Object.assign(new Error('An agent is already running'), { name: 'AgentRateLimitError' });
+    if (busy())
+      throw Object.assign(new Error('An agent is already running'), {
+        name: 'AgentRateLimitError',
+      });
     if (workspaceRoot && !isVoiceStudioCheckout(workspaceRoot)) {
       workspaceRoot = null;
       state = { ...state, workspaceAvailable: false, workspacePath: undefined };
@@ -949,7 +931,10 @@ export async function registerRepairAgents(
     timeoutMs = 10 * 60 * 1_000,
   ): Promise<DubAgentTranslationResult> => {
     validateDubTranslationRequest(request);
-    if (busy()) throw Object.assign(new Error('An agent is already running'), { name: 'AgentRateLimitError' });
+    if (busy())
+      throw Object.assign(new Error('An agent is already running'), {
+        name: 'AgentRateLimitError',
+      });
     const definition = DEFINITIONS.find((item) => item.id === request.agent)!;
     // Pending before the await, so a concurrent run is refused and a stop or
     // disposal while the CLI is located prevents the spawn.

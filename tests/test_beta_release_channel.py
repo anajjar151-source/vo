@@ -65,7 +65,7 @@ def test_beta_release_uses_beta_notes_and_skips_sunset_feeds(release_module, mon
     assets = tmp_path / "assets"
     assets.mkdir()
     for suffix in ("mac-arm64.dmg", "mac-x64.dmg", "linux-x64.deb"):
-        (assets / f"VoiceStudio-Electron-1.2.3-beta.2-{suffix}").write_bytes(b"x")
+        (assets / f"VoiceStudio-1.2.3-beta.2-{suffix}").write_bytes(b"x")
     payload = b"foo"
     digest = base64.b64encode(hashlib.sha512(payload).digest()).decode()
     (assets / "electron-beta-win32-x64.yml").write_text(
@@ -118,7 +118,7 @@ def test_only_stable_moves_the_stable_container_tags():
     )
     assert 'CHANNEL" = stable' in run and 'promote_stable="$PROMOTE"' in run
     docker = (WORKFLOWS / "docker.yml").read_text(encoding="utf-8")
-    assert docker.count('test "$PROMOTE_STABLE" != "true"') == 2, "both flavors must refuse"
+    assert docker.count('test "$PROMOTE_STABLE" != "true"') == 3, "every flavor must refuse"
     for line in docker.splitlines():
         if "pattern={{major}}.{{minor}}" in line or "value=stable" in line:
             assert "!contains(github.ref, '-')" in line, f"beta must not move: {line.strip()}"
@@ -136,3 +136,14 @@ def test_every_electron_channel_regex_accepts_beta():
     assert "electron-beta-linux-x64" in (
         ROOT / "electron" / "scripts" / "embed-appimage-update.mjs"
     ).read_text(encoding="utf-8")
+
+
+def test_appimage_update_info_contract_matches_the_embed_script():
+    """v0.5.7-beta.1 failed Linux packaging: the embed script pinned a beta image to
+    its tag while the post-build contract still demanded `latest`. Both must key
+    the release field off the channel in the same way."""
+    embed = (ROOT / "electron/scripts/embed-appimage-update.mjs").read_text(encoding="utf-8")
+    contract = (ROOT / "electron/tests/update-package-contract.mjs").read_text(encoding="utf-8")
+    assert "isBeta ? releaseTag : 'latest'" in embed
+    assert "channel.startsWith('electron-beta-') ? `v${version}` : 'latest'" in contract
+    assert "|latest|VoiceStudio-" not in contract, "contract must not hardcode latest"

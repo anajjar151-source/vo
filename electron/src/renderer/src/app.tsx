@@ -11,6 +11,7 @@ import { router } from './router';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { toast } from 'sonner';
 import { AnalyticsConsentBanner, AnalyticsRuntime } from '@/components/analytics-consent';
+import { GpuOfferBanner } from '@/components/gpu-offer';
 import { CloudSyncRuntime } from '@/features/account/cloud-sync-runtime';
 import { getBridge } from '@/components/bridge';
 import { FirstSoundHandoff } from '@/components/first-sound-handoff';
@@ -124,6 +125,7 @@ export function App() {
           <AnalyticsRuntime />
           <CloudSyncRuntime />
           <AnalyticsConsentBanner />
+          <GpuOfferBanner />
           <GenerationProvider>
             <FirstSoundHandoff />
             <TooltipProvider>

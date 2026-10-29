@@ -95,7 +95,6 @@ def update_mapping(key: str, changes: dict, *, replace: bool = False) -> None:
 
 
 def delete(key: str) -> None:
-    """Remove *key* from prefs.json if present."""
     with _MUTATE_LOCK:
         data = _load()
         data.pop(key, None)

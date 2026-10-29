@@ -8,6 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageNativeHelper } from './native-helper-build.mjs';
+import { finalizeOmnivoiceTts, omnivoiceTtsResources, signMac } from './omnivoice-tts-bundle.mjs';
 import { repairSnapArtifacts } from './snap-template-payload.mjs';
 import { APP_ID, PRODUCT_NAME } from '../config/app-config.mjs';
 import { DISTRIBUTION_PROFILE, DISTRIBUTION_TARGET } from '../config/distributions.mjs';
@@ -17,12 +18,16 @@ const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'u
 const storeMetadata = JSON.parse(readFileSync(resolve(here, '../store/metadata.json'), 'utf-8'));
 const storeIdentity = storeMetadata.identity;
 const isMacAppStore = DISTRIBUTION_TARGET === 'mac-app-store';
-const artifactLabel =
-  {
-    'microsoft-store': 'MicrosoftStore',
-    'mac-app-store': 'MacAppStore',
-  }[DISTRIBUTION_TARGET] ?? 'Electron';
-const artifactPrefix = `${PRODUCT_NAME.replace(/[^A-Za-z0-9]+/g, '-')}-${artifactLabel}`;
+// Direct downloads are `VoiceStudio-<version>-<os>-<arch>.<ext>`; store builds
+// keep a label so they never collide with them. Releases up to v0.5.7-beta.3
+// used `VoiceStudio-Electron-*`; the installers still resolve those names.
+const artifactLabel = {
+  'microsoft-store': 'MicrosoftStore',
+  'mac-app-store': 'MacAppStore',
+}[DISTRIBUTION_TARGET];
+const artifactPrefix = [PRODUCT_NAME.replace(/[^A-Za-z0-9]+/g, '-'), artifactLabel]
+  .filter(Boolean)
+  .join('-');
 // Stable and Beta are the Electron update feeds (Beta = `-beta.N` prereleases,
 // stamped by electron-release.yml). Packaging rehearsals from main are stamped
 // stable; they are review artifacts and are never published.
@@ -107,6 +112,8 @@ const bundledUvResources =
   uvSource && existsSync(uvSource) && statSync(uvSource).size > 0
     ? [{ from: uvSource, to: `tools/uv${uvExtension}` }]
     : [];
+// OmniVoice GGUF runtime, staged by the release workflows (#2780).
+const bundledOmnivoiceTtsResources = isMacAppStore ? [] : omnivoiceTtsResources();
 const notarizeMac =
   !isMacAppStore &&
   Boolean(
@@ -147,8 +154,14 @@ export default {
   // the installer): the shell bootstraps a uv venv on first run.
   extraResources: [
     { from: 'build/icons/icon.png', to: 'brand/icon.png' },
+    { from: 'build/icons/icon-macos.png', to: 'brand/icon-macos.png' },
     { from: 'build/icons/icon.ico', to: 'brand/icon.ico' },
     { from: 'build/icons/32x32.png', to: 'brand/32x32.png' },
+    { from: 'build/icons/trayTemplate.png', to: 'brand/trayTemplate.png' },
+    {
+      from: 'build/icons/trayRecordingTemplate.png',
+      to: 'brand/trayRecordingTemplate.png',
+    },
     {
       from: 'build/icons/tray-recording.png',
       to: 'brand/tray-recording.png',
@@ -170,15 +183,21 @@ export default {
     },
     { from: '../pyproject.toml', to: 'pyproject.toml' },
     { from: '../uv.lock', to: 'uv.lock' },
+    { from: '../scripts/windows-rocm-recipe.json', to: 'scripts/windows-rocm-recipe.json' },
+    { from: '../scripts/smoke_windows_rocm.py', to: 'scripts/smoke_windows_rocm.py' },
     { from: '../README.md', to: 'README.md' },
     { from: '../LICENSE', to: 'LICENSE' },
     { from: '../LICENSE-NOTICE.md', to: 'LICENSE-NOTICE.md' },
     { from: '../config/app.json', to: 'config/app.json' },
     { from: 'T3CODE-LICENSE.txt', to: 'electron/T3CODE-LICENSE.txt' },
     ...bundledUvResources,
+    ...bundledOmnivoiceTtsResources,
   ],
   asar: true,
-  afterPack: packageNativeHelper,
+  afterPack: async (context) => {
+    await packageNativeHelper(context);
+    finalizeOmnivoiceTts(context);
+  },
   ...(DISTRIBUTION_TARGET === 'snap-store'
     ? { afterAllArtifactBuild: ({ artifactPaths }) => repairSnapArtifacts(artifactPaths) }
     : {}),
@@ -203,6 +222,9 @@ export default {
     // a Developer ID certificate and Apple credentials enable both together.
     hardenedRuntime: isMacAppStore ? false : notarizeMac,
     ...(adhocSignMac ? { identity: '-' } : {}),
+    // Signs the bundled GGUF runtime and refreshes its checksum manifest
+    // before the bundle seal (electron/omnivoice-tts-bundle.mjs).
+    ...(bundledOmnivoiceTtsResources.length ? { sign: signMac } : {}),
     notarize: notarizeMac,
     extendInfo: {
       NSMicrophoneUsageDescription: readFileSync(resolve(here, 'build/Info.plist'), 'utf8')

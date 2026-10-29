@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
   safeThrows: false,
   keyring: false,
   setBackendOnlyEnv: vi.fn(),
-  handlers: new Map<string, (...a: unknown[]) => unknown>(),
+  handlers: new Map<string, (...args: unknown[]) => unknown>(),
 }));
 vi.mock('electron', () => ({
   app: {

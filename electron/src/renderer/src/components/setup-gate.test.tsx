@@ -71,6 +71,16 @@ function mount() {
   );
   return client;
 }
+it('keeps long step labels inside the sidebar with the full label as a tooltip', async () => {
+  // #2940: a long single-word label overflowed the sidebar instead of wrapping.
+  mock.ready = false;
+  mount();
+  await screen.findByText('Preflight');
+  const step = screen.getByRole('button', { name: '3.settings.privacy' });
+  expect(step).toHaveAttribute('title', 'settings.privacy');
+  const label = step.querySelector('[data-setup-step-label]');
+  expect(label).toHaveClass('min-w-0', 'line-clamp-2', '[overflow-wrap:anywhere]');
+});
 it('bypasses onboarding for a backend with required models present', async () => {
   localStorage.setItem('voicestudio.setup.complete.v1', '1');
   mount();
@@ -169,4 +179,13 @@ it('the privacy step also waits for the account choice when accounts are offered
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'setup.continue_ok' })).toBeEnabled(),
   );
+});
+it('lets a long footer label wrap instead of clipping the Next button', async () => {
+  mock.ready = false;
+  mount();
+  await screen.findByText('Preflight');
+  for (const name of ['setup.back', 'setup.continue_ok']) {
+    const button = screen.getByRole('button', { name });
+    expect(button).toHaveClass('whitespace-normal', 'h-auto');
+  }
 });

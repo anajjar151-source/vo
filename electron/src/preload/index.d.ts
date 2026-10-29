@@ -31,7 +31,14 @@ export interface NativeCrashRecord {
 export interface BackendStatus {
   lastCrash?: NativeCrashRecord;
   stage: BackendStage;
-  setupIssue?: 'space' | 'access' | 'unsupported_platform' | 'wrong_architecture';
+  setupIssue?:
+    | 'space'
+    | 'access'
+    | 'unsupported_platform'
+    | 'wrong_architecture'
+    | 'missing_system_library'
+    | 'outdated_system_library'
+    | 'files_locked';
   /** Free disk (GiB) the failed install needed; the CPU-only install needs less than the CUDA one. */
   setupRequiredGib?: number;
   /** A prior explicit install stopped after creating its resumable project/cache. */
@@ -53,6 +60,11 @@ export interface BackendStatus {
     activePackage?: string;
     downloadsComplete?: boolean;
     estimatedBytes?: boolean;
+    /** Host serving the active download, from the wheel URLs pinned in uv.lock. */
+    downloadHost?: string;
+    /** Pending downloads received no bytes for `stalledSeconds`. */
+    stalled?: boolean;
+    stalledSeconds?: number;
   };
   /** http://127.0.0.1:<port> — no trailing slash. */
   baseUrl: string;
@@ -79,6 +91,8 @@ export interface BackendStatus {
   /** Managed Python environment root shown during first-run setup. */
   runtimePath?: string;
   runtimeCustom?: boolean;
+  /** Free GiB on the drive that will hold the runtime, while setup is required. */
+  runtimeFreeGib?: number;
   runtimeRegion?: RuntimeRegion;
   /** Where data, models and temp files go when the location was chosen during setup. */
   runtimeStorage?: { data: string; models: string; temp: string };
@@ -112,6 +126,8 @@ export interface UpdateState {
   currentVersion: string;
   /** Absent when this build cannot switch channels (Store builds, dev runs). */
   channel?: UpdateChannel;
+  /** Set only while status is 'unsupported': why this build cannot update itself. */
+  unsupportedReason?: 'development' | 'store' | 'package-manager';
   availableVersion?: string;
   notes?: string | null;
   progress: number;
@@ -207,6 +223,8 @@ export interface RepairAgentState {
   exitCode?: number | null;
   workspaceAvailable: boolean;
   workspacePath?: string;
+  /** Set only on a chooseWorkspace reply whose picked folder was rejected. */
+  workspaceError?: 'installed_app' | 'not_git' | 'not_voicestudio' | 'read_only';
 }
 export type RepairAgentEvent =
   | { sessionId: string; type: 'output'; text: string }
@@ -328,6 +346,8 @@ export interface AccountPublicState {
     settingsSync: boolean | null;
     proDesktop: boolean | null;
   } | null;
+  /** Dashboard pages for managing the profile and the plan; null when signed out. */
+  links: { profile: string; plan: string } | null;
 }
 
 export interface VoiceStudioBridge {
@@ -392,6 +412,9 @@ export interface VoiceStudioBridge {
     platform: NodeJS.Platform;
     isDev: boolean;
     onNavigate(callback: (path: string) => void): () => void;
+    /** Native fullscreen state (macOS hides the traffic lights there); the callback fires on every change. */
+    isFullScreen(): Promise<boolean>;
+    onFullScreen(callback: (fullscreen: boolean) => void): () => void;
     onPersistenceFlush(callback: () => void | Promise<void>): () => void;
   };
   backend: {

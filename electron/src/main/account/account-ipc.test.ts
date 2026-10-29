@@ -32,6 +32,10 @@ function ctl(over: Partial<ConstructorParameters<typeof AccountController>[0]> =
       entitlements: async () => null,
     } as never,
     remembered: true,
+    links: {
+      profile: 'https://app.example/app/settings/profile',
+      plan: 'https://app.example/app/settings/plan',
+    },
     ...over,
   });
 }
@@ -42,6 +46,7 @@ it('the public state never carries a token', async () => {
   expect(Object.keys(s).sort()).toEqual([
     'accountEnabled',
     'available',
+    'links',
     'notice',
     'plan',
     'profile',
@@ -197,4 +202,15 @@ it('when the account cannot be loaded, the state says why instead of showing not
   expect(s.profileError).toBe('403');
   const ok = await ctl().publicState(true);
   expect(ok.profileError).toBeNull();
+});
+
+it('hands the renderer the dashboard profile and plan links only while signed in', async () => {
+  expect((await ctl().publicState()).links).toEqual({
+    profile: 'https://app.example/app/settings/profile',
+    plan: 'https://app.example/app/settings/plan',
+  });
+  const signedOut = ctl({
+    session: { state: () => ({ signedIn: false, signingIn: false, notice: null }) } as never,
+  });
+  expect((await signedOut.publicState()).links).toBeNull();
 });

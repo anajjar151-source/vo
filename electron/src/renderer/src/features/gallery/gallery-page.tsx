@@ -30,10 +30,7 @@ import { ProfileAvatar } from '@/components/profile-avatar';
 import { apiJson, apiPath, describeError } from '@/lib/api/client';
 import { queryKeys } from '@/lib/query';
 import type { Profile } from '@/lib/api/types';
-import type {
-  ArchetypePage,
-  ArchetypeCategory,
-} from '@shared/api/archetypes-types';
+import type { ArchetypePage, ArchetypeCategory } from '@shared/api/archetypes-types';
 import { mergeDescribedAttrs } from '@shared/utils/voiceInstruct';
 import { STORAGE, readDraft } from '@/features/design/design-draft';
 import { setCloneSetting } from '@/lib/store/clone-settings';
@@ -182,21 +179,28 @@ export function GalleryPage() {
     <div className="flex h-full min-h-0 flex-col">
       <WorkspaceHeader>
         <h1 className="text-sm font-medium">{t('nav.gallery')}</h1>
+        {/* The sections switch in the page header, so each one's own filters sit
+            directly under it instead of below a second bar. */}
+        <div
+          role="group"
+          aria-label={t('nav.gallery')}
+          className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-lg bg-muted/40 p-0.5 ring-1 ring-inset ring-border/50"
+        >
+          {(['archetypes', 'community', 'imports'] as const).map((value) => (
+            <Button
+              key={value}
+              size="sm"
+              variant={zone === value ? 'secondary' : 'ghost'}
+              className="h-6 shrink-0"
+              aria-pressed={zone === value}
+              disabled={saving !== null}
+              onClick={() => setZone(value)}
+            >
+              {t('gallery.zone_' + value)}
+            </Button>
+          ))}
+        </div>
       </WorkspaceHeader>
-      <div className="flex shrink-0 gap-2 border-b border-border/50 px-5 py-2">
-        {(['archetypes', 'community', 'imports'] as const).map((value) => (
-          <Button
-            key={value}
-            size="sm"
-            variant={zone === value ? 'secondary' : 'ghost'}
-            aria-pressed={zone === value}
-            disabled={saving !== null}
-            onClick={() => setZone(value)}
-          >
-            {t('gallery.zone_' + value)}
-          </Button>
-        ))}
-      </div>
       {zone === 'community' ? (
         <CommunityView favorites={favorites} toggleFavorite={toggleFavorite} />
       ) : zone === 'imports' ? (

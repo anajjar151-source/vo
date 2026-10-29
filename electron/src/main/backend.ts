@@ -1,21 +1,35 @@
 import { decideMissingRuntime, runtimeWasInstalled } from './runtime-repair';
+import { windowsRocmInstalled, windowsRocmRequested } from './runtime-windows-rocm';
+import { runtimeProjectReady } from './runtime-readiness';
+import { runRuntimeProbe } from './runtime-probe';
+import { RuntimeLaunchRefusedError } from './runtime-launch-refusal';
+import { pypiFilesHost } from './pypi-mirror';
 import {
   installRuntime,
+  MISSING_SYSTEM_LIBRARY_CODE,
+  OUTDATED_SYSTEM_LIBRARY_CODE,
+  RUNTIME_FILES_LOCKED_CODE,
   promoteLegacyRuntimeCaches,
-  runtimeCompatible,
   runtimeDependenciesReady,
+  runtimeDownloadHosts,
   runtimeInstallInterrupted,
-  runtimeReady,
   runtimePython,
+  runtimeUvCache,
   stageRuntimeSources,
   type RuntimeRegion,
 } from './runtime-project';
-import { collectHostSnapshot, type HostSnapshot } from './host-snapshot';
+import { collectHostSnapshot, freeGb, type HostSnapshot } from './host-snapshot';
 import { runtimeSetupSupported } from './distribution';
 import { asciiSafePthFiles } from './pth-ascii';
 import { devProbeStamped, writeDevProbeStamp } from './dev-probe-stamp';
 import { CrashJournal } from './crash-journal';
 import { nativeFaultSummary } from '../shared/utils/crashReport';
+import {
+  backendStartupFailure,
+  isBrokenEnvironmentOutput,
+  windowsLoadBlock,
+  type WindowsLoadBlock,
+} from '../shared/utils/backendOutput';
 import { availableBackendPort } from './backend-port';
 import { scopedStorage, scopedStorageEnv, type ScopedStorage } from './storage-scope';
 import { legacyStorageEnv } from './legacy-storage';
@@ -53,6 +67,7 @@ import {
 } from './remote-backend';
 import { toolSearchDirs, toolSearchDirsAsync } from './tool-path';
 import { SetupProgressTracker, cleanProcessLine } from './setup-progress';
+import { SetupDownloadReporter, inFlightDownloadBytes } from './setup-downloads';
 import { scrubText } from '../shared/utils/scrub';
 import { DEFAULT_BACKEND_PORT } from '../../../config/app-config.mjs';
 
@@ -240,12 +255,7 @@ export function bundledUvPath(resourcesPath: string, platform = process.platform
   return join(resourcesPath, 'tools', platform === 'win32' ? 'uv.exe' : 'uv');
 }
 
-/**
- * Intel Macs (#889, #2365): PyTorch ships no macOS x86_64 wheels, so the
- * managed runtime can never resolve there. The setup screen must say so
- * before any install is offered — never after a multi-GB failure.
- * Testable via parameters following bundledUvPath's precedent.
- */
+/** Whether this host has no installable managed AI runtime. */
 export function isUnsupportedPlatform(platform = process.platform, arch = process.arch): boolean {
   return platform === 'darwin' && arch === 'x64';
 }
@@ -278,6 +288,19 @@ function usableFile(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The uv to hand the backend: the user's own non-blank pin, else the one this shell
+ * located. A blank value is dropped rather than passed on, because the backend reads
+ * any set value as "the shell tried and failed" instead of falling back to PATH.
+ */
+export function bundledUvEnv(
+  pinned: string | undefined,
+  locate: () => string | null,
+): string | undefined {
+  if (pinned?.trim()) return pinned;
+  return locate() ?? undefined;
 }
 
 function findUv(): string | null {
@@ -452,10 +475,18 @@ function samePath(left: string, right: string): boolean {
     : normalizedLeft === normalizedRight;
 }
 
+/** A source checkout that cannot launch, and the setup screen that explains why. */
+export interface SpawnPlanError {
+  error: string;
+  /** Set when no local setup can succeed on this host (Intel Mac, #3584). */
+  setupIssue?: 'unsupported_platform';
+}
+
 export async function resolveSpawnPlan(
   port: number,
   packagedProject?: string,
-): Promise<SpawnPlan | { error: string }> {
+  hostIssue: ReturnType<typeof platformSetupIssue> = platformSetupIssue(),
+): Promise<SpawnPlan | SpawnPlanError> {
   const root = backendRoot();
   const override = parseBackendCmdOverride(process.env.OMNIVOICE_BACKEND_CMD);
   if (override) return { argv: override, cwd: root };
@@ -471,8 +502,32 @@ export async function resolveSpawnPlan(
   // Setup is explicit: `uv run` can sync gigabytes inside the health-check
   // deadline and repeat that download after every restart (#2184).
   const portArg = ['--port', String(port)];
+  // PyTorch publishes no Intel-Mac wheels, so `uv sync` cannot resolve the lock
+  // there and every module stays missing (#3584). Advising `setup:api` would
+  // only repeat that failure; say what does work instead.
+  if (hostIssue === 'unsupported_platform') {
+    return {
+      error:
+        'This Intel Mac cannot run the local VoiceStudio backend: PyTorch no longer publishes ' +
+        'Intel-Mac wheels, so `bun run setup:api` cannot install it. Connect the app to a ' +
+        'VoiceStudio backend on another computer, or run the backend on an Apple Silicon Mac, ' +
+        'Windows or Linux.',
+      setupIssue: 'unsupported_platform',
+    };
+  }
+  if (hostIssue === 'wrong_architecture') {
+    return {
+      error:
+        `This checkout runs Intel (x64) Electron under Rosetta on an Apple Silicon Mac, and Intel-Mac ` +
+        `PyTorch wheels do not exist. Open a native (arm64) terminal in ${root}, delete node_modules ` +
+        'and .venv, run `bun install` and `bun run setup:api` with an arm64 Bun, then start the app again.',
+    };
+  }
   const python = venvPython(root);
-  const setup = `Open a terminal in ${root}, run \`bun run setup:api\`, wait for it to finish, then restart.`;
+  // Only a source checkout reaches this point: an installed app returned above
+  // with its app-managed runtime, which the setup screen repairs in-app (#3480).
+  // Retry re-runs this check, so a finished setup needs no app restart.
+  const setup = `Open a terminal in ${root}, run \`bun run setup:api\`, wait for it to finish, then press Retry.`;
   if (!existsSync(python)) {
     // Not a source checkout and not a packaged app (a copied folder, a
     // download of the wrong archive): setup:api does not exist there (#2988).
@@ -517,7 +572,7 @@ export function devRendererPort(rendererUrl: string | undefined): string | null 
 
 function childEnv(
   port: number,
-  region: RuntimeRegion = 'auto',
+  _region: RuntimeRegion = 'auto',
   platform = process.platform,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
@@ -542,6 +597,10 @@ function childEnv(
     env.POSTHOG_PROJECT_TOKEN = packagedToken;
   }
   if (packagedHost && !env.POSTHOG_HOST) env.POSTHOG_HOST = packagedHost;
+  // The backend reports the same build commit as the app in bug reports.
+  if (!env.OMNIVOICE_BUILD_COMMIT && __BUILD_COMMIT__ !== 'unknown') {
+    env.OMNIVOICE_BUILD_COMMIT = __BUILD_COMMIT__;
+  }
   delete env.PYTHONHOME;
   delete env.PYTHONPATH;
   env.PYTHONUNBUFFERED = '1';
@@ -562,17 +621,17 @@ function childEnv(
   // while the binary sat inside the app bundle. findUv() knows where to look;
   // hand the answer over instead of keeping it. An explicit override from the
   // environment still wins.
-  if (!env.OMNIVOICE_BUNDLED_UV) {
-    const uv = findUv();
-    if (uv) env.OMNIVOICE_BUNDLED_UV = uv;
-  }
+  const uv = bundledUvEnv(env.OMNIVOICE_BUNDLED_UV, findUv);
+  if (uv) env.OMNIVOICE_BUNDLED_UV = uv;
+  else delete env.OMNIVOICE_BUNDLED_UV;
   // #2599: LAN devices load the web UI from this backend. Serve the build
   // shipped inside this app version's resources, never a copy beside the
   // runtime project (absent on updated installs, stale after an update).
   if (app.isPackaged && process.resourcesPath && !env.OMNIVOICE_FRONTEND_DIST?.trim()) {
     env.OMNIVOICE_FRONTEND_DIST = bundledWebUiPath();
   }
-  if (region === 'china') env.HF_ENDPOINT ??= 'https://hf-mirror.com';
+  // Region defaults must leave HF_ENDPOINT unset so the backend can probe and
+  // fail over. Only an explicit user endpoint may disable automatic selection.
   if (platform === 'win32') {
     env.TORCHDYNAMO_DISABLE = '1';
     env.HF_HUB_DISABLE_SYMLINKS = '1';
@@ -612,22 +671,98 @@ export function managedBackendSpawnOptions(
   };
 }
 
+export type SmartAppControl = 'on' | 'evaluation' | 'off' | 'unknown';
+
+/** Windows keeps Smart App Control in `VerifiedAndReputablePolicyState`: 0 off, 1 on, 2 evaluation. */
+export function smartAppControlFromRegistry(output: string): SmartAppControl {
+  const match = /VerifiedAndReputablePolicyState\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(output);
+  if (!match) return 'unknown';
+  return (
+    ({ 0: 'off', 1: 'on', 2: 'evaluation' } as const)[Number.parseInt(match[1], 16) as 0 | 1 | 2] ??
+    'unknown'
+  );
+}
+
+/** Read only after a launch was already refused, so the 3 s cap never delays a healthy start. */
+function readSmartAppControl(platform = process.platform): SmartAppControl {
+  if (platform !== 'win32') return 'unknown';
+  try {
+    const result = spawnSync(
+      'reg.exe',
+      [
+        'query',
+        String.raw`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`,
+        '/v',
+        'VerifiedAndReputablePolicyState',
+      ],
+      { encoding: 'utf8', timeout: 3000, windowsHide: true },
+    );
+    return smartAppControlFromRegistry(result.stdout ?? '');
+  } catch {
+    return 'unknown';
+  }
+}
+
 /** A failed spawn names the program, not just the OS error. Windows denies a
- *  blocked executable with a bare `spawn UNKNOWN`; runtime-owned launches get
- *  the install that owns the program, while custom `OMNIVOICE_BACKEND_CMD`
- *  launches point at their own executable instead (#2440). */
+ *  blocked executable with a bare `spawn UNKNOWN`; missing runtime-owned programs
+ *  point at their install, while custom `OMNIVOICE_BACKEND_CMD` launches point
+ *  at their own executable instead (#2440). When Smart App
+ *  Control is on, it is named: it has no per-app exceptions, so the usual
+ *  antivirus-exclusion advice cannot help (#3224). */
 export function spawnFailureMessage(
   command: string,
   error: unknown,
-  { runtimeOwned = true }: { runtimeOwned?: boolean } = {},
+  {
+    runtimeOwned = true,
+    smartAppControl,
+  }: { runtimeOwned?: boolean; smartAppControl?: SmartAppControl } = {},
 ): string {
   const detail = errorMessage(error);
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   const launchRejected = ['ENOENT', 'UNKNOWN', 'EACCES', 'EPERM'].includes(code ?? '');
   if (!launchRejected) return `Could not start ${command}: ${detail}`;
+  if (runtimeOwned && code === 'UNKNOWN') {
+    const control = smartAppControl ?? readSmartAppControl();
+    if (control === 'on' || control === 'evaluation') {
+      return `Could not start ${command}: ${detail}. Windows Smart App Control blocked it.`;
+    }
+  }
+  // Refused execution is not evidence of a broken installation. The renderer
+  // adds its localized permission/security hint to this diagnostic.
+  if (runtimeOwned && code !== 'ENOENT') return `Could not start ${command}: ${detail}`;
   return runtimeOwned
     ? `Could not start ${command}: ${detail}. Install or repair the local runtime, then restart VoiceStudio.`
     : `Could not start ${command}: ${detail}. Check that the program exists and can be launched, then try again.`;
+}
+
+function runtimeFailureMessage(error: unknown): string {
+  return error instanceof RuntimeLaunchRefusedError
+    ? spawnFailureMessage(error.program, error.cause)
+    : errorMessage(error);
+}
+
+/** A backend that Windows stopped from loading one of its files names who did
+ *  it, in words the renderer's hints recognise: Smart App Control (no per-app
+ *  exceptions), an antivirus, or another application-control policy (#3209). */
+export function loadBlockMessage(
+  why: string,
+  lastOutput: string,
+  block: WindowsLoadBlock,
+  smartAppControl: SmartAppControl = block === 'application_control'
+    ? readSmartAppControl()
+    : 'unknown',
+): string {
+  const who =
+    block === 'antivirus'
+      ? 'Your antivirus blocked it.'
+      : block === 'application_control' &&
+          (smartAppControl === 'on' || smartAppControl === 'evaluation')
+        ? 'Windows Smart App Control blocked it.'
+        : 'A Windows application control policy blocked it.';
+  return (
+    `Backend exited (${why}): Windows refused to load one of the engine's files. ${who}` +
+    (lastOutput ? ` Last output: ${lastOutput}` : '')
+  );
 }
 
 /** The startup-budget failure says what the launch actually did, so a report
@@ -683,6 +818,16 @@ export class BackendSupervisor extends EventEmitter<{
   private readonly log: string[] = [];
   /** Only the spawned process's own output, for quoting back in failure messages. */
   private readonly childLog: string[] = [];
+  /**
+   * The spawned process's stderr only.
+   *
+   * The backend's verdict about a failed start is printed there, while the
+   * access log uvicorn writes to stdout can be the last line of a failed
+   * launch — every /health poll during startup prints one. Quoting "the last
+   * line" therefore reported `503 Service Unavailable` to a user whose real
+   * problem was a native extension that would not load (#3058).
+   */
+  private readonly childErrorLog: string[] = [];
   /** When the spawned process last printed a line (0 = nothing yet this launch). */
   private lastChildOutputAt = 0;
   /** Bumped on every start/shutdown so stale poll loops and exit handlers no-op. */
@@ -700,6 +845,9 @@ export class BackendSupervisor extends EventEmitter<{
   private diagnosis: BackendStatus['diagnosis'];
   private setupIssue: BackendStatus['setupIssue'];
   private setupRequiredGib: number | undefined;
+  /** Free GiB on the drive that will hold the runtime; probed once per location during setup. */
+  private runtimeFreeGib: number | undefined;
+  private freeProbeRoot: string | undefined;
   private runtimeInterrupted = false;
   private repairAttempted = false;
   private runtimeRepairFailed = false;
@@ -734,7 +882,12 @@ export class BackendSupervisor extends EventEmitter<{
       uv: findUvAsync,
       gpu: async () => {
         const info = (await app.getGPUInfo('basic')) as {
-          gpuDevice?: { vendorId?: number; deviceId?: number; active?: boolean; driverVersion?: string }[];
+          gpuDevice?: {
+            vendorId?: number;
+            deviceId?: number;
+            active?: boolean;
+            driverVersion?: string;
+          }[];
         };
         const devices = info.gpuDevice ?? [];
         const active = devices.find((device) => device.active) ?? devices[0];
@@ -789,6 +942,8 @@ export class BackendSupervisor extends EventEmitter<{
     if (this.stage === 'setup_required' && this.setupIssue) status.setupIssue = this.setupIssue;
     if (this.stage === 'setup_required' && this.setupIssue === 'space' && this.setupRequiredGib)
       status.setupRequiredGib = this.setupRequiredGib;
+    if (this.stage === 'setup_required' && app.isPackaged && this.runtimeFreeGib !== undefined)
+      status.runtimeFreeGib = this.runtimeFreeGib;
     if (this.stage === 'setup_required' && this.runtimeInterrupted)
       status.runtimeInterrupted = true;
     if (this.stage === 'setup_required' && this.runtimeRepairFailed)
@@ -828,6 +983,7 @@ export class BackendSupervisor extends EventEmitter<{
     // quote the backend it just killed, and a completed runtime install must
     // not quote the installer — setupRuntime's uv children share this ring.
     this.childLog.length = 0;
+    this.childErrorLog.length = 0;
     this.lastChildOutputAt = 0;
     this.setStage('attaching', { managed: false, message: undefined });
     try {
@@ -881,6 +1037,7 @@ export class BackendSupervisor extends EventEmitter<{
               previouslyInstalled: await runtimeWasInstalled(project),
               repairAttempted: this.repairAttempted,
               unsupported: isUnsupportedPlatform(),
+              rocmNotYetInstalled: windowsRocmRequested() && !(await windowsRocmInstalled(project)),
             });
             this.runtimeRepairFailed = action === 'repair_failed';
             this.runtimeInterrupted = await runtimeInstallInterrupted(project);
@@ -942,6 +1099,14 @@ export class BackendSupervisor extends EventEmitter<{
       const plan = await resolveSpawnPlan(this.port, this.runtimeProject ?? undefined);
       if (gen !== this.generation) return;
       if ('error' in plan) {
+        if (plan.setupIssue) {
+          // Same screen an installed app shows on this host: remote-backend
+          // guidance instead of a Retry that can never succeed.
+          this.setupIssue = plan.setupIssue;
+          this.pushLog('err', plan.error);
+          this.setStage('setup_required', { message: undefined });
+          return;
+        }
         this.setStage('failed', { message: plan.error });
         return;
       }
@@ -950,7 +1115,7 @@ export class BackendSupervisor extends EventEmitter<{
       void this.waitUntilReady(gen, startupBudgetMs());
     } catch (error) {
       if (gen !== this.generation) return;
-      const message = errorMessage(error);
+      const message = runtimeFailureMessage(error);
       this.pushLog('err', message);
       this.setStage('failed', { message });
     }
@@ -964,8 +1129,6 @@ export class BackendSupervisor extends EventEmitter<{
       this.installation ||
       this.cleaningRuntime ||
       this.stage !== 'setup_required' ||
-      // The setup screen hides the install CTA here; refuse direct IPC too —
-      // the dependency set can never resolve on this host (#2365).
       isUnsupportedPlatform()
     )
       return;
@@ -978,6 +1141,7 @@ export class BackendSupervisor extends EventEmitter<{
     this.startedAt = Date.now();
     this.log.length = 0;
     this.childLog.length = 0;
+    this.childErrorLog.length = 0;
     this.setupIssue = undefined;
     this.setupRequiredGib = undefined;
     this.runtimeRepairFailed = false;
@@ -985,11 +1149,9 @@ export class BackendSupervisor extends EventEmitter<{
     this.setupPhase = 'checking';
     this.setupProgress.reset();
     this.setStage('installing', { message: undefined });
+    const stopWatching = this.watchSetupDownloads(gen, controller.signal);
     try {
-      const reusable =
-        ((await runtimeReady(backendRoot(), project)) ||
-          (await runtimeCompatible(backendRoot(), project))) &&
-        (await runtimeDependenciesReady(project));
+      const reusable = await runtimeProjectReady(backendRoot(), project);
       if (gen !== this.generation || controller.signal.aborted) return;
       if (reusable) {
         await this.start();
@@ -1015,10 +1177,7 @@ export class BackendSupervisor extends EventEmitter<{
           'Creating a separate Electron runtime; existing environment preserved.',
         );
         this.emitStatus();
-        const fallbackReusable =
-          ((await runtimeReady(backendRoot(), project)) ||
-            (await runtimeCompatible(backendRoot(), project))) &&
-          (await runtimeDependenciesReady(project));
+        const fallbackReusable = await runtimeProjectReady(backendRoot(), project);
         if (gen !== this.generation || controller.signal.aborted) return;
         if (fallbackReusable) {
           await this.start();
@@ -1038,8 +1197,41 @@ export class BackendSupervisor extends EventEmitter<{
         backendRoot(),
         project,
         findUv(),
-        (command, args, cwd, env) =>
-          new Promise<string>((resolve, reject) => {
+        (command, args, cwd, env, options) => {
+          // A planning run (uv's dry run) is read, not shown: its package list
+          // would read as installs to the progress tracker.
+          if (options?.quiet)
+            return runRuntimeProbe(
+              command,
+              args,
+              cwd,
+              { ...childEnv(this.port, this.runtimeRegion), ...env },
+              {
+                timeoutMs: options.timeoutMs,
+                signal: controller.signal,
+                captureStderr: true,
+              },
+            );
+          if (options?.timeoutMs)
+            return runRuntimeProbe(
+              command,
+              args,
+              cwd,
+              { ...childEnv(this.port, this.runtimeRegion), ...env },
+              {
+                timeoutMs: options.timeoutMs,
+                signal: controller.signal,
+                onSpawn: (child) => {
+                  this.child = child;
+                  this.attachLineReader(child.stdout, 'out');
+                  this.attachLineReader(child.stderr, 'err');
+                },
+                onClose: (child) => {
+                  if (this.child === child) this.child = null;
+                },
+              },
+            );
+          return new Promise<string>((resolve, reject) => {
             if (controller.signal.aborted) {
               reject(controller.signal.reason);
               return;
@@ -1077,7 +1269,8 @@ export class BackendSupervisor extends EventEmitter<{
                   }),
                 );
             });
-          }),
+          });
+        },
         controller.signal,
         (phase) => {
           if (gen !== this.generation) return;
@@ -1085,6 +1278,22 @@ export class BackendSupervisor extends EventEmitter<{
           this.emitStatus();
         },
         this.runtimeRegion,
+        {
+          log: (line) => {
+            if (gen === this.generation) this.pushLog('out', line);
+          },
+          transfer: (name, received, total) => {
+            if (gen !== this.generation) return;
+            this.setupProgress.observeTransfer(name, received, total);
+            this.emitStatus();
+          },
+          pypiHost: (host) => {
+            if (gen !== this.generation) return;
+            void runtimeDownloadHosts(backendRoot(), process.platform, process.arch, host)
+              .then((hosts) => this.setupProgress.setDownloadHosts(hosts))
+              .catch(() => undefined);
+          },
+        },
       );
       if (gen === this.generation) await this.start();
     } catch (error) {
@@ -1095,19 +1304,68 @@ export class BackendSupervisor extends EventEmitter<{
             ? (platformSetupIssue() ?? 'unsupported_platform')
             : code === 'ENOSPC'
               ? 'space'
-              : ['EACCES', 'EPERM', 'EROFS'].includes(code || '')
-                ? 'access'
-                : undefined;
+              : code === MISSING_SYSTEM_LIBRARY_CODE
+                ? 'missing_system_library'
+                : code === OUTDATED_SYSTEM_LIBRARY_CODE
+                  ? 'outdated_system_library'
+                  : code === RUNTIME_FILES_LOCKED_CODE
+                    ? 'files_locked'
+                    : ['EACCES', 'EPERM', 'EROFS'].includes(code || '')
+                      ? 'access'
+                      : undefined;
         this.setupRequiredGib =
           code === 'ENOSPC' ? (error as { requiredGib?: number }).requiredGib : undefined;
         this.runtimeRepairFailed = this.repairAttempted;
         this.runtimeInterrupted = await runtimeInstallInterrupted(project);
-        this.pushLog('err', errorMessage(error));
-        this.setStage('setup_required', { message: errorMessage(error) });
+        const message = runtimeFailureMessage(error);
+        this.pushLog('err', message);
+        this.setStage('setup_required', { message });
       }
     } finally {
+      stopWatching();
       if (this.installation === controller) this.installation = null;
     }
+  }
+
+  /**
+   * uv prints nothing while a large wheel downloads, so watch its cache for
+   * in-flight bytes: the setup screen names the source host, and a download
+   * that stops receiving data shows as stalled instead of frozen (#3411).
+   */
+  private watchSetupDownloads(gen: number, signal: AbortSignal): () => void {
+    const reporter = new SetupDownloadReporter();
+    void Promise.resolve()
+      .then(() =>
+        runtimeDownloadHosts(
+          backendRoot(),
+          process.platform,
+          process.arch,
+          pypiFilesHost(this.runtimeRegion),
+        ),
+      )
+      .then((hosts) => this.setupProgress.setDownloadHosts(hosts))
+      .catch(() => undefined);
+    let sampling = false;
+    const timer = setInterval(() => {
+      if (sampling || signal.aborted || gen !== this.generation || this.stage !== 'installing')
+        return;
+      if (this.setupPhase !== 'installing_deps' || !this.runtimeProject) return;
+      sampling = true;
+      void inFlightDownloadBytes(runtimeUvCache(this.runtimeProject))
+        .then((bytes) => {
+          if (signal.aborted || gen !== this.generation || this.stage !== 'installing') return;
+          this.setupProgress.observeInFlight(bytes);
+          const snapshot = this.setupProgress.snapshot();
+          for (const line of reporter.lines(snapshot)) this.pushLog('out', line);
+          if (snapshot.downloadsComplete === false) this.emitStatus();
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          sampling = false;
+        });
+    }, 3_000);
+    timer.unref?.();
+    return () => clearInterval(timer);
   }
 
   /** Remove only an Electron-owned Python project, then perform a fresh install. */
@@ -1144,8 +1402,9 @@ export class BackendSupervisor extends EventEmitter<{
         )
           ? 'access'
           : undefined;
-        this.pushLog('err', errorMessage(error));
-        this.setStage('setup_required', { message: errorMessage(error) });
+        const message = runtimeFailureMessage(error);
+        this.pushLog('err', message);
+        this.setStage('setup_required', { message });
       }
       return;
     } finally {
@@ -1241,13 +1500,17 @@ export class BackendSupervisor extends EventEmitter<{
   private runtimeStorage(): { runtimeStorage?: ScopedStorage } {
     const scoped = scopedRuntimeRoot();
     const root = this.runtimeProject ? dirname(this.runtimeProject) : null;
-    return scoped && root && samePath(scoped, root) ? { runtimeStorage: scopedStorage(scoped) } : {};
+    return scoped && root && samePath(scoped, root)
+      ? { runtimeStorage: scopedStorage(scoped) }
+      : {};
   }
 
   setRuntimeLocation(parent: string | null): { path: string; custom: boolean } {
     if (
       !app.isPackaged ||
-      this.stage !== 'setup_required' ||
+      // A failed start can be fixed by moving the runtime (permission, synced
+      // folder, missing environment), so those stages may change location too.
+      !['setup_required', 'failed', 'crashed', 'port_in_use'].includes(this.stage) ||
       this.installation ||
       this.cleaningRuntime
     )
@@ -1296,7 +1559,9 @@ export class BackendSupervisor extends EventEmitter<{
   get ownedRuntimeEntries(): string | string[] | null {
     const root = this.ownedRuntimeRoot;
     if (!root || storedRuntimeLocation()?.scoped !== true) return root;
-    return ['project', '.uv-cache', '.python', '.tmp', 'tmp'].map((name) => join(root, name));
+    return ['project', '.uv-cache', '.python', '.tmp', 'tmp', '.wheel-prefetch'].map((name) =>
+      join(root, name),
+    );
   }
 
   websocketUrl(path: '/ws/transcribe' | '/ws/events' | '/ws/tts'): Promise<string> {
@@ -1327,23 +1592,48 @@ export class BackendSupervisor extends EventEmitter<{
     const candidates = (
       configured ? [configured] : [this.runtimeProject, own, ...legacyTauriRuntimeProjects()]
     ).filter((candidate): candidate is string => Boolean(candidate));
+    const selected = configured ?? own;
+    let selectedRefusal: RuntimeLaunchRefusedError | undefined;
     for (const project of new Set(candidates.map((candidate) => resolve(candidate)))) {
-      if (
-        ((await runtimeReady(bundle, project)) || (await runtimeCompatible(bundle, project))) &&
-        (await runtimeDependenciesReady(project))
-      ) {
-        this.runtimeProject = project;
-        if (project !== own && project !== configured)
-          this.pushLog('out', `Reusing compatible Tauri runtime: ${project}`);
-        return { project, ready: true };
+      try {
+        if (await runtimeProjectReady(bundle, project)) {
+          this.runtimeProject = project;
+          if (project !== own && project !== configured)
+            this.pushLog('out', `Reusing compatible Tauri runtime: ${project}`);
+          return { project, ready: true };
+        }
+      } catch (error) {
+        if (!(error instanceof RuntimeLaunchRefusedError)) throw error;
+        // A legacy candidate must not prevent setup or reuse of another one.
+        if (samePath(project, selected)) selectedRefusal = error;
       }
     }
-    this.runtimeProject = configured ?? own;
+    this.runtimeProject = selected;
+    if (selectedRefusal) throw selectedRefusal;
     return { project: this.runtimeProject, ready: false };
   }
 
   private emitStatus(): void {
+    this.probeRuntimeFree();
     this.emit('status', this.status);
+  }
+
+  /** Reads the free space of the install drive once per location so the setup screen can show it. */
+  private probeRuntimeFree(): void {
+    if (this.stage !== 'setup_required' || !app.isPackaged) {
+      this.freeProbeRoot = undefined;
+      return;
+    }
+    const root = dirname(this.runtimeProject ?? join(defaultRuntimeRoot(), 'project'));
+    if (this.freeProbeRoot === root) return;
+    this.freeProbeRoot = root;
+    void freeGb(root)
+      .then((gb) => {
+        if (this.freeProbeRoot !== root) return;
+        this.runtimeFreeGib = gb ?? undefined;
+        this.emit('status', this.status);
+      })
+      .catch(() => undefined);
   }
 
   private pushLog(stream: 'out' | 'err', line: string, fromChild = false): void {
@@ -1364,6 +1654,11 @@ export class BackendSupervisor extends EventEmitter<{
       this.childLog.push(line);
       if (this.childLog.length > LOG_RING_LINES)
         this.childLog.splice(0, this.childLog.length - LOG_RING_LINES);
+      if (stream === 'err') {
+        this.childErrorLog.push(line);
+        if (this.childErrorLog.length > LOG_RING_LINES)
+          this.childErrorLog.splice(0, this.childErrorLog.length - LOG_RING_LINES);
+      }
     }
     (stream === 'err' ? console.error : console.log)(`[backend] ${line}`);
     if (this.stage === 'installing') {
@@ -1491,9 +1786,7 @@ export class BackendSupervisor extends EventEmitter<{
     this.exitCode = code;
     this.exitSignal = signal;
     const bindFailure =
-      code === EXIT_PORT_IN_USE
-        ? 'in_use'
-        : bindFailureFromLog(this.childLog.join('\n'));
+      code === EXIT_PORT_IN_USE ? 'in_use' : bindFailureFromLog(this.childLog.join('\n'));
     if (bindFailure === 'in_use') {
       this.setStage('port_in_use', {
         message: `Port ${this.port} is already in use by another process. Stop it or set OMNIVOICE_PORT.`,
@@ -1514,9 +1807,88 @@ export class BackendSupervisor extends EventEmitter<{
     // log line. Name the fault and where it happened instead (#2382, #2187).
     const lastLine = nativeFaultSummary(recorded?.logTail.join('\n') ?? '') || this.childLog.at(-1);
     const why = signal ? `signal ${signal}` : `exit code ${code}`;
+    // The backend's own verdict names the cause of a failed start. Without it
+    // the message quoted uvicorn's access log for the last /health poll —
+    // "503 Service Unavailable" — and hid the import error that actually
+    // killed the process (#3058).
+    const startup = backendStartupFailure(this.childErrorLog);
+    // Windows refused to load one of the runtime's files: name who did, since
+    // the quoted DLL error alone reads like a broken install (#3209).
+    // Python words the refusal in the Windows display language, so a non-English
+    // message is matched by the Smart App Control state instead.
+    const loadBlock =
+      windowsLoadBlock(this.childErrorLog) ??
+      (process.platform === 'win32' &&
+      /dll load failed/i.test(this.childErrorLog.slice(-20).join('\n')) &&
+      // A missing DLL is a broken runtime that repair can fix, not a refusal.
+      !/the specified module could not be found|could not find module/i.test(
+        this.childErrorLog.slice(-20).join('\n'),
+      ) &&
+      ['on', 'evaluation'].includes(readSmartAppControl())
+        ? 'application_control'
+        : null);
+    if (loadBlock) {
+      this.setStage('crashed', {
+        managed: true,
+        message: loadBlockMessage(why, lastLine ?? '', loadBlock),
+      });
+      return;
+    }
+    // A backend that died while importing its own dependencies is a broken
+    // environment, not a crash to retry: its wheels are damaged or a system
+    // library they link against is gone. Repair the managed runtime once per
+    // launch instead of leaving the user with a dead app (#3058).
+    if (this.canRepairRuntime() && isBrokenEnvironmentOutput(this.childErrorLog)) {
+      this.repairAttempted = true;
+      this.pushLog(
+        'out',
+        'The backend died while loading its Python dependencies; repairing the runtime.',
+      );
+      this.setStage('setup_required', { managed: true, message: undefined });
+      void this.setupRuntime();
+      return;
+    }
     this.setStage('crashed', {
-      message: `Backend exited unexpectedly (${why}).${lastLine ? ` Last output: ${lastLine}` : ''}`,
+      // The child was ours: the failure belongs to the managed runtime, and a
+      // report that says "Managed: false" sends the triage the wrong way.
+      managed: true,
+      message: startup
+        ? `Backend failed to start during '${startup.step}' (${why}): ${startup.reason}`
+        : `Backend exited unexpectedly (${why}).${lastLine ? ` Last output: ${lastLine}` : ''}`,
     });
+  }
+
+  /**
+   * Whether this launch may rebuild the managed runtime on its own.
+   *
+   * The same guard the setup flow uses: a packaged app with a user-initiated
+   * runtime, no custom backend command, a resolved runtime project and no
+   * install already running.
+   */
+  /**
+   * Whether the resolved runtime project is one this install created. A
+   * compatible legacy Tauri project can be adopted as the runtime; a crash-time
+   * repair must never run `uv sync` inside files another install owns.
+   */
+  private ownsRuntimeProject(): boolean {
+    const project = this.runtimeProject;
+    if (!project) return false;
+    if (samePath(project, join(defaultRuntimeRoot(), 'project'))) return true;
+    const configured = storedRuntimeLocation();
+    return Boolean(configured?.owned && samePath(project, join(configured.root, 'project')));
+  }
+
+  private canRepairRuntime(): boolean {
+    return (
+      app.isPackaged &&
+      runtimeSetupSupported() &&
+      !parseBackendCmdOverride(process.env.OMNIVOICE_BACKEND_CMD) &&
+      !isUnsupportedPlatform() &&
+      this.ownsRuntimeProject() &&
+      !this.repairAttempted &&
+      !this.installation &&
+      !this.cleaningRuntime
+    );
   }
 
   private async probe(baseUrl = this.baseUrl, identityOnly = false): Promise<boolean> {
@@ -1621,6 +1993,9 @@ export class BackendSupervisor extends EventEmitter<{
     const credentials = await this.remoteCredentials();
     if (gen !== this.generation) return false;
     if (credentials === 'valid') {
+      // A healthy run must not leave import errors behind: a later unrelated
+      // exit would otherwise match them and be misread as a broken runtime.
+      this.childErrorLog.length = 0;
       this.setStage('ready', patch);
     } else if (credentials === 'rejected') {
       if (this.diagnosis !== 'auth_required' || this.stage !== 'failed') {

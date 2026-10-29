@@ -2,6 +2,7 @@ import { CheckIcon, MinusIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { ExternalLink } from '@/components/external-link';
 import type { AccountPublicState } from '../../../../preload/index.d';
 
 function size(bytes: number): string {
@@ -68,22 +69,28 @@ export function AccountDetails({
             {initials(name)}
           </span>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           {profile.displayName && <p className="truncate font-medium">{profile.displayName}</p>}
           {profile.email && (
             <p className="truncate text-sm text-muted-foreground">{profile.email}</p>
           )}
         </div>
+        {state.links && (
+          <ExternalLink href={state.links.profile}>{t('account.manage_profile')}</ExternalLink>
+        )}
       </div>
       {plan && (
         <dl className="grid gap-3 text-sm sm:grid-cols-[8rem_1fr]">
           <dt className="text-muted-foreground">{t('account.plan')}</dt>
-          <dd>
+          <dd className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="font-medium">{plan.planName}</span>
             {plan.planEndsAt && (
-              <span className="ml-2 text-muted-foreground">
+              <span className="text-muted-foreground">
                 {t('account.plan_ends', { date: new Date(plan.planEndsAt).toLocaleDateString() })}
               </span>
+            )}
+            {state.links && (
+              <ExternalLink href={state.links.plan}>{t('account.manage_plan')}</ExternalLink>
             )}
           </dd>
           <dt className="text-muted-foreground">{t('account.storage')}</dt>

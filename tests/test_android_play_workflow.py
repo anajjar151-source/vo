@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -33,7 +34,57 @@ def test_workflow_uploads_only_a_verified_release_bundle_to_internal():
     cleanup = steps[-1]
     assert cleanup["name"] == "Remove upload keystore" and cleanup["if"] == "always()"
     build = steps[names.index("Build signed bundle")]
-    assert "GITHUB_RUN_ATTEMPT" in build["run"] and ":app:bundleRelease" in build["run"]
+    assert "scripts/android_version_code.py" in build["run"] and ":app:bundleRelease" in build["run"]
+
+
+def test_signed_android_workflows_share_build_number_source_and_serialization():
+    play = load(WORKFLOW)["jobs"]["play-internal"]
+    release = load(ROOT / ".github/workflows/mobile-release.yml")["jobs"]["android"]
+    assert play["concurrency"] == release["concurrency"]
+    assert play["concurrency"]["cancel-in-progress"] == "false"
+    for job in (play, release):
+        build = next(step for step in job["steps"] if "VOICESTUDIO_ANDROID_VERSION_CODE" in step.get("run", ""))
+        assert 'python3 "$GITHUB_WORKSPACE/scripts/android_version_code.py"' in build["run"]
+        assert "GITHUB_RUN_NUMBER" not in build["run"]
+        assert "GITHUB_RUN_ATTEMPT" not in build["run"]
+
+
+def test_build_numbers_advance_across_workflows_and_reruns(monkeypatch):
+    import runpy
+
+    code = runpy.run_path(str(ROOT / "scripts/android_version_code.py"))["version_code"]
+    monkeypatch.setenv("GITHUB_RUN_NUMBER", "9000")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "9")
+    monkeypatch.setattr("time.time", lambda: 1_792_771_200)
+    first = code()
+    monkeypatch.setenv("GITHUB_RUN_NUMBER", "1")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    monkeypatch.setattr("time.time", lambda: 1_792_771_260)
+    assert code() == first + 1
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "10")
+    monkeypatch.setattr("time.time", lambda: 1_792_771_320)
+    assert code() == first + 2
+
+
+def test_build_numbers_stay_far_below_plays_limit():
+    # Play refuses a first upload whose code jumps toward 2.1e9; seconds gave ~2.1e8 in 2026.
+    import runpy
+
+    code = runpy.run_path(str(ROOT / "scripts/android_version_code.py"))["version_code"]
+    assert code(1_792_771_200) < 5_000_000  # 2026-10-23
+    assert code(2_524_608_000) < 20_000_000  # 2050-01-01
+
+
+@pytest.mark.parametrize(("minutes", "accepted"), [(0, False), (1, True), (2_100_000_000, True), (2_100_000_001, False)])
+def test_build_number_bounds(minutes, accepted):
+    import runpy
+
+    module = runpy.run_path(str(ROOT / "scripts/android_version_code.py"))
+    if accepted:
+        assert module["version_code"](module["EPOCH"] + minutes * 60) == minutes
+    else:
+        with pytest.raises(ValueError):
+            module["version_code"](module["EPOCH"] + minutes * 60)
 
 
 def test_gradle_signs_release_only_with_the_upload_key_and_parses_beta_versions():

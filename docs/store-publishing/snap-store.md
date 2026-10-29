@@ -67,17 +67,31 @@ node ../scripts/create_snap_store_assets.mjs
 
 Inspect these workflow artifacts before installing:
 
-- `VoiceStudio-Electron-<version>-linux-x64.snap`
-- `VoiceStudio-Electron-<version>-snap-verification.json`
+- `VoiceStudio-<version>-linux-x64.snap`
+- `VoiceStudio-<version>-snap-verification.json`
 - `store-artifact-manifest-linux-x64.json`
-- `snap-store-assets/icon.png`, five screenshots and `listing-assets.json`
+- `snap-store-assets/icon.png`, `banner.png` (3:1 listing banner), five screenshots and `listing-assets.json`
 
 The package verifier also requires electron-builder's desktop runtime scripts
 and libraries to be expanded at the Snap root. A nested template archive or a
 missing `desktop-init.sh` is a blocking packaging failure.
 
 The asset manifest derives only from `store/assets.json`; do not fork listing
-copy or image sources in the Snap dashboard.
+copy or image sources in the Snap dashboard. The workflow never edits the listing,
+so upload `icon.png`, `banner.png` and the screenshots in the Snap dashboard's
+Listing page by hand. The banner is rendered from `store/snap/banner.html` at
+1920x640 (open it in Chromium and capture the viewport) and must stay 3:1.
+
+## Snapcraft Builds (dashboard)
+
+`snap/snapcraft.yaml` lets the snapcraft.io **Builds** tab build the snap too.
+It repackages the official Linux `.deb` of the latest GitHub release (checked
+against the release's `SHA256SUMS.txt`) with the same strict confinement and
+interfaces as the release workflow, and disables the in-app updater because
+snapd owns updates. `tests/test_snapcraft_yaml.py` keeps its interfaces equal
+to the `snap-store` target in `electron/electron-builder.config.mjs`. The
+release workflow above remains the primary path; if Snapcraft Builds is
+connected, release its revisions to `edge` and promote as usual.
 
 ## Confinement validation
 

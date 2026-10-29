@@ -28,6 +28,8 @@ export interface WaveformPlayerProps {
   height?: number;
   showWaveform?: boolean;
   compact?: boolean;
+  /** Known clip length in seconds, shown until the audio's own metadata loads. */
+  durationHint?: number;
   onEnded?: () => void;
   onCanPlay?: MediaPlayerProps['onCanPlay'];
   playerRef?: React.RefObject<MediaPlayerInstance | null>;
@@ -63,6 +65,12 @@ export function waveformUrl(src: string, base = document.baseURI): string {
   }
 }
 
+/** The media's duration once known; until then the caller's hint (e.g. the take's stored length). */
+export function displayDuration(duration: number, hint?: number): number {
+  if (Number.isFinite(duration) && duration > 0) return duration;
+  return hint != null && Number.isFinite(hint) && hint > 0 ? hint : 0;
+}
+
 /** Keep controls aligned with the concrete audio element even if provider state is stale. */
 export function subscribeMediaPaused(
   media: HTMLMediaElement,
@@ -85,6 +93,7 @@ export const WaveformPlayer = memo(function WaveformPlayer({
   showWaveform = true,
   height = 44,
   compact = false,
+  durationHint,
   onEnded,
   onCanPlay,
   playerRef: externalPlayerRef,
@@ -117,6 +126,7 @@ export const WaveformPlayer = memo(function WaveformPlayer({
         src={src}
         height={height}
         compact={compact}
+        durationHint={durationHint}
         media={media}
         player={player}
         source={source}
@@ -129,6 +139,7 @@ function WaveformControls({
   src,
   height,
   compact,
+  durationHint,
   media,
   player,
   source,
@@ -137,6 +148,7 @@ function WaveformControls({
   src: string;
   height: number;
   compact: boolean;
+  durationHint?: number;
   media: HTMLMediaElement | null;
   player: React.RefObject<MediaPlayerInstance | null>;
   source: string;
@@ -151,7 +163,8 @@ function WaveformControls({
   const [mediaPaused, setMediaPaused] = useState(true);
   const paused = media ? mediaPaused : providerPaused;
   const canPlay = useMediaState('canPlay');
-  const duration = useMediaState('duration');
+  const mediaDuration = useMediaState('duration');
+  const duration = displayDuration(mediaDuration, durationHint);
   const time = useMediaState('currentTime');
   const error = useMediaState('error');
   const seek = usePlaybackSeek(source);
@@ -163,7 +176,7 @@ function WaveformControls({
     resetPlaybackClock(source);
     return () => resetPlaybackClock(source);
   }, [source, src]);
-  useEffect(() => publishPlaybackClock(source, time, duration), [duration, source, time]);
+  useEffect(() => publishPlaybackClock(source, time, mediaDuration), [mediaDuration, source, time]);
   useEffect(() => {
     if (!seek || !player.current) return;
     player.current.currentTime = seek.time;
@@ -230,10 +243,10 @@ function WaveformControls({
           <input
             type="range"
             min={0}
-            max={Number.isFinite(duration) && duration > 0 ? duration : 1}
+            max={duration > 0 ? duration : 1}
             step="0.01"
             value={Number.isFinite(time) ? time : 0}
-            disabled={!duration}
+            disabled={!mediaDuration}
             aria-label={t('player.seek')}
             className={cn(
               'absolute inset-0 h-full w-full cursor-pointer accent-primary focus-visible:outline-2 focus-visible:outline-primary',
@@ -246,7 +259,7 @@ function WaveformControls({
           />
         </div>
       )}
-      <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+      <span className="shrink-0 text-right font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
         {formatClock(time)} / {formatClock(duration)}
       </span>
     </>

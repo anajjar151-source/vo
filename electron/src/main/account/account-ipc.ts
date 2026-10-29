@@ -36,6 +36,8 @@ export class AccountController {
       session: AccountSession;
       api: AccountApi;
       remembered: boolean;
+      /** The dashboard pages for managing the profile and the plan (opened in the browser). */
+      links: { profile: string; plan: string };
     },
   ) {}
 
@@ -94,6 +96,7 @@ export class AccountController {
       profile,
       plan: s.signedIn ? this.plan : null,
       profileError: s.signedIn ? this.profileError : null,
+      links: s.signedIn ? this.parts.links : null,
     };
   }
 

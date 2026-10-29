@@ -7,9 +7,10 @@
 
 Asks first (channel, version, draft/publish), shows the new tag next to the last
 release, and only then switches to an up-to-date `main` if needed. Bumps the three version files in lockstep,
-refreshes uv.lock, writes the CHANGELOG section, runs the version guards,
-commits, pushes, tags, and either leaves the build as a draft (tag push) or
-dispatches `electron-release.yml` with `publish`. Nothing leaves the machine
+refreshes uv.lock, writes the CHANGELOG section, runs the version guards and
+opens the release pull request. Run it again once that merges: main then has
+the version, so it only tags and either leaves the build as a draft (tag push)
+or dispatches `electron-release.yml` with `publish`. Nothing leaves the machine
 until you type the tag name to confirm. See docs/RELEASING.md.
 """
 from __future__ import annotations
@@ -26,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prepare_electron_release import channel_for  # noqa: E402
+from changelog_fragments import apply_fragments, read_fragments, remove_fragments  # noqa: E402
 
 GUARD_TESTS = [
     "tests/test_app_version.py",
@@ -34,8 +36,21 @@ GUARD_TESTS = [
 ]
 RELEASE_FILES = [
     "package.json", "pyproject.toml", "backend/core/version.py", "uv.lock", "CHANGELOG.md",
+    "changelog.d",
 ]
-SIGNING_SECRETS = ("ELECTRON_MACOS_CSC_LINK", "ELECTRON_WINDOWS_CSC_LINK", "APPLE_ID")
+# Platforms whose installers are signed. Kept apart from the table below so that
+# what the helper prints is plain platform names, never anything derived from the
+# credential-name table (a static analyser treats that table as sensitive).
+PLATFORMS = ("macOS", "Windows")
+# Repo variable names electron-release.yml reads to sign each platform's
+# installers. Only names are listed and checked here, never values.
+SIGNING_ENV_NAMES = {
+    "macOS": (
+        "ELECTRON_MACOS_CSC_LINK", "ELECTRON_MACOS_CSC_KEY_PASSWORD",
+        "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID",
+    ),
+    "Windows": ("ELECTRON_WINDOWS_CSC_LINK", "ELECTRON_WINDOWS_CSC_KEY_PASSWORD"),
+}
 _VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?")
 
 
@@ -218,22 +233,59 @@ def ensure_main() -> None:
     sh("git", "merge", "--ff-only", "origin/main")
 
 
-def missing_signing_secrets() -> list[str]:
+def unsigned_platforms() -> tuple[list[str], bool]:
+    """Platforms whose signing secrets are missing, and whether the list is a guess.
+
+    A guess (gh could not list secrets) treats every platform as unsigned so the
+    owner is asked rather than assuming installers will be signed.
+    """
     result = subprocess.run(
         ["gh", "secret", "list", "--json", "name", "--jq", ".[].name"],
         cwd=ROOT, capture_output=True, text=True,
     )
     if result.returncode:
-        return list(SIGNING_SECRETS)  # cannot tell; ask rather than assume signed
+        return list(PLATFORMS), True
     present = set(result.stdout.split())
-    return [name for name in SIGNING_SECRETS if name not in present]
+    missing = [
+        platform for platform in PLATFORMS
+        if not all(name in present for name in SIGNING_ENV_NAMES[platform])
+    ]
+    return missing, False
 
 
-def dispatch_publish(tag: str, allow_unsigned: bool) -> None:
+def ask_allow_unsigned() -> list[str]:
+    """Report signing per platform; return the platforms that would ship unsigned.
+
+    Raises SystemExit when the owner declines. An empty list means everything is
+    signed and no question is asked.
+    """
+    gaps, guessed = unsigned_platforms()
+    if not gaps:
+        print("Signing: macOS and Windows secrets are configured.")
+        return []
+    for platform in PLATFORMS:
+        state = (
+            "?  could not read repo secrets" if guessed
+            else "NO signing secrets (installers ship unsigned)" if platform in gaps
+            else "signed"
+        )
+        print(f"  {platform:8} {state}")
+    print("  (v0.5.6 also shipped unsigned installers; users see SmartScreen/Gatekeeper warnings.)")
+    answer = select_option(
+        f"Publish with unsigned {' and '.join(gaps)} installers?",
+        [("no", "cancel; add the secrets (docs/RELEASING.md → Credentials) or pick draft"),
+         ("yes", "publish anyway; the release notes disclose it")],
+    )
+    if answer != "yes":
+        raise SystemExit("Cancelled: configure signing, or choose draft.")
+    return gaps
+
+
+def dispatch_publish(tag: str, allow_unsigned: bool | list) -> None:
     sh(
         "gh", "workflow", "run", "electron-release.yml", "--ref", "main",
         "-f", f"release_tag={tag}", "-f", "publish=true",
-        "-f", f"allow_unsigned={str(allow_unsigned).lower()}",
+        "-f", f"allow_unsigned={str(bool(allow_unsigned)).lower()}",
     )
 
 
@@ -241,13 +293,9 @@ def publish_existing(tag: str) -> None:
     channel = channel_for(tag.removeprefix("v"))
     if subprocess.run(["gh", "auth", "status"], cwd=ROOT, capture_output=True).returncode:
         raise SystemExit("gh is not authenticated (run: gh auth login)")
-    unsigned = False
-    if missing_signing_secrets():
-        unsigned = select_option(
-            "Signing secrets missing or unreadable. Ship UNSIGNED installers?",
-            [("no", "cancel"), ("yes", "trust warnings, macOS updates unverified")],
-        ) == "yes"
-    print(f"\nPublish {tag} ({channel}) from its existing build{' (unsigned)' if unsigned else ''}.")
+    unsigned = ask_allow_unsigned()
+    print(f"\nPublish {tag} ({channel}) from its existing build"
+          f"{' (UNSIGNED: ' + ', '.join(unsigned) + ')' if unsigned else ''}.")
     if input(f"Type {tag} to confirm: ").strip() != tag:
         raise SystemExit("Cancelled.")
     dispatch_publish(tag, unsigned)
@@ -282,53 +330,40 @@ def release(args: argparse.Namespace) -> None:
         [("draft", "build only, nothing public; publish later"),
          ("publish", "build and publish now")],
     )
-    unsigned = False
-    if mode == "publish" and missing_signing_secrets():
-        print("Signing secrets are missing or unreadable (Mac/Windows signing).")
-        unsigned = select_option(
-            "Ship UNSIGNED installers?",
-            [("no", "cancel; configure signing or choose draft"), ("yes", "trust warnings, macOS updates unverified")],
-        ) == "yes"
-        if not unsigned:
-            raise SystemExit("Cancelled: configure signing, or choose draft.")
+    unsigned = ask_allow_unsigned() if mode == "publish" else []
 
     switch = (
         f"switch from {branch} to main, " if branch != "main" else ""
     ) + (f"fast-forward main by {behind} commits, " if behind not in ("0", "?") else "")
+    # main only changes through pull requests, so a release takes two runs: the
+    # first opens the release PR, the second (after it merges) tags main.
+    on_main = current == version
+    build = f"tag {tag}, push tag{', publish' if mode == 'publish' else ' (draft; publish later with --publish)'}"
+    steps = (
+        f"{switch}{build}  (main already has {version})" if on_main else
+        f"""{switch}set package.json + pyproject.toml + backend/core/version.py to {version},
+            uv lock, CHANGELOG section, run version guards,
+            commit "chore(release): {tag}" on release/{tag}, push it and open its pull request;
+            after it merges, run this again with {version} to {build}"""
+    )
     print(f"""
 Release plan
   channel   {channel}  ({'GitHub prerelease, never latest; :beta Docker' if channel == 'beta' else 'GitHub latest; :stable Docker'})
   new tag   {tag}   (last release {last})
-  mode      {mode}{'  (UNSIGNED installers)' if unsigned else ''}
-  steps     {switch}set package.json + pyproject.toml + backend/core/version.py to {version},
-            uv lock, CHANGELOG section, run version guards,
-            commit "chore(release): {tag}", push main, tag {tag}, push tag{', publish' if mode == 'publish' else ' (draft; publish later with --publish)'}""")
+  mode      {mode}{'  (UNSIGNED: ' + ', '.join(unsigned) + ')' if unsigned else ''}
+  steps     {steps}""")
     if args.dry_run:
         print("\n--dry-run: nothing changed.")
         return
-    if input(f"\nThis pushes to main and tags. Type {tag} to confirm: ").strip() != tag:
+    action = "tags main" if on_main else "opens the release pull request"
+    if input(f"\nThis {action}. Type {tag} to confirm: ").strip() != tag:
         raise SystemExit("Cancelled.")
 
     ensure_main()
-    try:
-        bump_files(ROOT, version)
-        changelog = ROOT / "CHANGELOG.md"
-        changelog.write_text(
-            prepare_changelog(changelog.read_text(encoding="utf-8"), version, datetime.date.today()),
-            encoding="utf-8",
-        )
-        sh("uv", "lock")
-        sh("uv", "run", "pytest", *GUARD_TESTS, "-q")
-    except (subprocess.CalledProcessError, ValueError) as error:
-        # Nothing is committed or pushed yet: put the working tree back.
-        sh("git", "checkout", "--", *RELEASE_FILES)
-        raise SystemExit(
-            f"\nRelease aborted before committing: {error}\n"
-            "The version files, uv.lock and CHANGELOG.md were restored; nothing was pushed."
-        )
-    sh("git", "add", *RELEASE_FILES)
-    sh("git", "commit", "-m", f"chore(release): {tag}")
-    sh("git", "push", "origin", "main")
+    if not on_main:
+        open_release_pr(version, tag)
+        return
+    print(f"main already has {version}; tagging it.")
     sh("git", "tag", tag)
     sh("git", "push", "origin", tag)
     if mode == "publish":
@@ -341,6 +376,61 @@ Release plan
         print(f"\nPublishing {tag}. Then verify: docs/RELEASING.md → Beta channel / verification table.")
     else:
         print(f"\nDraft build started for {tag}. Publish later: make release-publish TAG={tag}")
+
+
+def open_release_pr(version: str, tag: str) -> None:
+    """Bump, fold the changelog and open the release pull request from release/<tag>."""
+    branch = f"release/{tag}"
+    local = sh("git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}",
+               capture=True, check=False)
+    if local or sh("git", "ls-remote", "--heads", "origin", branch, capture=True):
+        # An earlier run already committed the bump (its push or pull request
+        # step failed): finish that run instead of bumping a second time.
+        if local:
+            sh("git", "switch", branch)
+        else:
+            sh("git", "switch", "-c", branch, "--track", f"origin/{branch}")
+        publish_release_branch(branch, version, tag)
+        return
+    sh("git", "switch", "-c", branch)
+    try:
+        bump_files(ROOT, version)
+        changelog = ROOT / "CHANGELOG.md"
+        folded = apply_fragments(changelog.read_text(encoding="utf-8"), read_fragments())
+        changelog.write_text(
+            prepare_changelog(folded, version, datetime.date.today()),
+            encoding="utf-8",
+        )
+        sh("uv", "lock")
+        sh("uv", "run", "pytest", *GUARD_TESTS, "-q")
+        # Only now, with every guard passed: a failed release keeps every fragment.
+        remove_fragments()
+    except (subprocess.CalledProcessError, ValueError) as error:
+        # Nothing is committed or pushed yet: put the working tree back.
+        sh("git", "checkout", "--", *RELEASE_FILES)
+        sh("git", "switch", "main")
+        sh("git", "branch", "-D", branch)
+        raise SystemExit(
+            f"\nRelease aborted before committing: {error}\n"
+            "The version files, uv.lock and CHANGELOG.md were restored; nothing was pushed."
+        )
+    sh("git", "add", *RELEASE_FILES)
+    sh("git", "commit", "-m", f"chore(release): {tag}")
+    publish_release_branch(branch, version, tag)
+
+
+def publish_release_branch(branch: str, version: str, tag: str) -> None:
+    """Push the release branch and open its pull request unless one is open already."""
+    sh("git", "push", "-u", "origin", branch)
+    if not sh("gh", "pr", "list", "--head", branch, "--state", "open",
+              "--json", "number", "--jq", ".[].number", capture=True):
+        sh("gh", "pr", "create", "--base", "main", "--head", branch,
+           "--title", f"chore(release): {tag}",
+           "--body", f"Release commit from `scripts/release.py`: {version} in the three version "
+                     "files, uv.lock, and the CHANGELOG section folded from changelog.d.")
+    sh("git", "switch", "main")
+    print(f"\nOpened the release pull request from {branch}. Once it merges, run "
+          f"`make release` again with {version}: it tags main and starts the build.")
 
 
 def main() -> None:
