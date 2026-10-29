@@ -57,6 +57,7 @@ from services.longform_render import (
     write_lf_text,
 )
 from services import longform_resume  # pure (no torch) — durable resume manifest
+from services.expression import apply_span_emotion
 from services.longform_progress import RenderProgress, chapter_weight
 
 logger = logging.getLogger("omnivoice.audiobook")
@@ -588,38 +589,6 @@ def _span_key_extras(span) -> tuple:
     return ((join,) if join else ()) + _emotion_key(span)
 
 
-#: Strength for a span's text emotion when the book sets none: IndexTTS2's
-#: recommended ceiling for text emotion, also Voice Cloning's default.
-_SPAN_EMOTION_ALPHA = 0.6
-
-
-def _span_emotion(cls, call_extra: dict, instruct, emotion, opts: ExpressiveOptions):
-    """Apply one span's ``[emotion:]`` the way the engine takes emotion (#3422).
-
-    Reads the same ``expression_caps`` declaration the UI gates on, so what the
-    editor offers and what the render does cannot disagree. Graded engines
-    (IndexTTS2) get it as ``emo_text``, replacing any book-level emotion for
-    this span; direction engines (CosyVoice 3, VoxCPM2) get it appended to the
-    voice's own ``instruct``; every other engine ignores it. Mutates
-    ``call_extra`` and returns the ``instruct`` to send.
-    """
-    from services.expression import emotion_control
-
-    if not emotion:
-        return instruct
-    control = emotion_control(cls)
-    if control == "graded":
-        for key in ("emo_vector", "emo_audio"):
-            call_extra.pop(key, None)
-        call_extra["emo_text"] = emotion
-        call_extra["use_emo_text"] = True
-        call_extra["emo_alpha"] = (opts.emo_alpha if opts.emo_alpha is not None
-                                   else _SPAN_EMOTION_ALPHA)
-    elif control == "direction":
-        return ", ".join(part for part in ((instruct or "").strip(), emotion) if part)
-    return instruct
-
-
 def _ensure_active_engine_licence() -> None:
     """403 before the stream opens, rather than one failed row per chapter."""
     from services.tts_backend import ensure_active_engine_licence
@@ -700,7 +669,7 @@ def _build_synth(
         call_extra = dict(extra)
         if native_proxy and seed is not None:
             call_extra["seed"] = seed
-        instruct = _span_emotion(cls, call_extra, v["instruct"], emotion, opts)
+        instruct = apply_span_emotion(cls, call_extra, v["instruct"], emotion, opts.emo_alpha)
         return backend.generate(
             text, language=language, ref_audio=v["ref_audio"],
             ref_text=v["ref_text"], instruct=instruct, duration=None,

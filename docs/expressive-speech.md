@@ -172,7 +172,8 @@ own words, so one line can be scared and the next excited:
 - It lasts until the next `[emotion:]`, and an empty `[emotion:]` goes back
   to the book's default. Every `[voice:]` switch and every chapter start
   neutral, so one character's mood never carries into the next character's
-  line. In Stories, each line starts neutral.
+  line. In Stories, each line starts neutral, and line previews and stem
+  exports apply the tag the same way as the full render.
 - The tag is never read aloud, on any engine or on the phone apps. It is
   case-insensitive, at most 200 characters, and cannot contain brackets.
 - A change of emotion inside a line splits it into separate renders that join

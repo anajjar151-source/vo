@@ -10,7 +10,8 @@ import importlib
 
 import pytest
 
-from services.audiobook import ExpressiveOptions, Span, parse_audiobook_script, synthesize_chapter
+from services.audiobook import Span, parse_audiobook_script, synthesize_chapter
+from services.expression import apply_span_emotion
 from services.longform_render import chapter_cache_key, segment_cache_key
 
 
@@ -60,8 +61,7 @@ def test_each_engine_kind_applies_emotion_its_own_way(control, attrs):
     engine = type("Engine", (), attrs)
     book = {"emo_vector": [0.5] + [0.0] * 7, "emo_text": "book-level calm"}
     call_extra = dict(book)
-    instruct = _router()._span_emotion(engine, call_extra, "warm", "quietly terrified",
-                                       ExpressiveOptions())
+    instruct = apply_span_emotion(engine, call_extra, "warm", "quietly terrified")
     if control == "graded":
         assert call_extra["emo_text"] == "quietly terrified"
         assert call_extra["use_emo_text"] is True
@@ -79,14 +79,14 @@ def test_each_engine_kind_applies_emotion_its_own_way(control, attrs):
 def test_graded_emotion_keeps_the_books_strength():
     engine = type("Engine", (), {"supports_emotion": True})
     call_extra: dict = {}
-    _router()._span_emotion(engine, call_extra, None, "sad", ExpressiveOptions(emo_alpha=0.3))
+    apply_span_emotion(engine, call_extra, None, "sad", emo_alpha=0.3)
     assert call_extra["emo_alpha"] == 0.3
 
 
 def test_direction_without_a_voice_instruct_sends_only_the_emotion():
     engine = type("Engine", (), {"instruct_directs_delivery": True})
-    assert _router()._span_emotion(engine, {}, None, "sad", ExpressiveOptions()) == "sad"
-    assert _router()._span_emotion(engine, {}, "  ", "sad", ExpressiveOptions()) == "sad"
+    assert apply_span_emotion(engine, {}, None, "sad") == "sad"
+    assert apply_span_emotion(engine, {}, "  ", "sad") == "sad"
 
 
 def test_synth_gets_emotion_only_for_tagged_spans():
