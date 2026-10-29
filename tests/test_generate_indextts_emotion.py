@@ -245,6 +245,15 @@ def test_span_emotion_directs_or_is_ignored(client, engine, monkeypatch, attrs, 
     assert "emo_text" not in kw
 
 
+def test_span_emotion_takes_a_strength_without_a_book_description(client, engine):
+    res = client.post("/generate", data={
+        "text": "Sad.", "engine": engine.id, "emo_alpha": "0.3", "emotion": "sad",
+    })
+    assert res.status_code == 200, res.text
+    assert engine.calls[0][1]["emo_text"] == "sad"
+    assert engine.calls[0][1]["emo_alpha"] == 0.3
+
+
 def test_span_emotion_is_bounded_like_the_parser(client, engine):
     res = client.post("/generate", data={"text": "x", "engine": engine.id, "emotion": "a" * 201})
     assert res.status_code == 422

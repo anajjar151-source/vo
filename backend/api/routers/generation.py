@@ -1932,7 +1932,8 @@ async def generate_speech(
         raise HTTPException(
             status_code=422, detail="Choose an emotion description OR an emotion vector."
         )
-    if emo_alpha is not None and not emotion_text:
+    # A line's emotion (#3422) takes the strength just as a description does.
+    if emo_alpha is not None and not emotion_text and not (emotion or "").strip():
         raise HTTPException(
             status_code=422, detail="Emotion strength requires an emotion description."
         )
