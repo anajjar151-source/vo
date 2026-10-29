@@ -165,6 +165,29 @@ def _spawn_env() -> dict[str, str]:
     return env
 
 
+#: Quality knobs the API accepts but the bundled ``omnivoice-tts`` binary
+#: has no CLI flag for (#3654). The pipeline always passes the app defaults
+#: (``num_step=16``, ``guidance_scale=2.0``), so only an explicit non-default
+#: raises — default-filled calls proceed exactly as before. Silent acceptance
+#: here repeats the #1014 class one layer down: the caller benchmarks 16 vs
+#: 32 and measures byte-identical files.
+_UNSUPPORTED_EXPLICIT_KW = {"num_step": 16, "guidance_scale": 2.0}
+
+
+def _reject_unsupported_quality_kwargs(kw) -> None:
+    """Raise when the caller explicitly asked for a quality knob the binary
+    cannot honor. App-default values pass through silently (the pipeline
+    always fills them in); anything else is a request we cannot fulfill,
+    and failing loudly beats a 200 OK that quietly did nothing."""
+    for key, default in _UNSUPPORTED_EXPLICIT_KW.items():
+        if key in kw and kw[key] != default:
+            raise ValueError(
+                f"omnivoice-gguf does not support {key}={kw[key]!r}: the "
+                f"bundled omnivoice-tts binary has no such flag. Remove the "
+                f"parameter or use the in-process omnivoice engine."
+            )
+
+
 def _binary_repair_hint() -> str:
     """One actionable sentence for a broken/placeholder GGUF binary (#1172).
 
@@ -642,7 +665,12 @@ def _make_backend_class():
               * ``denoise`` (bool) — omit denoise token when false.
               * ``preprocess_prompt`` (bool) — skip prompt preprocessing when false.
               * ``chunk_duration`` / ``chunk_threshold`` (float) — binary long-form controls.
+
+            Raises ``ValueError`` when ``num_step`` or ``guidance_scale``
+            is explicitly set to anything but the app default — the binary
+            has no such flag, so accepting it would silently do nothing.
             """
+            _reject_unsupported_quality_kwargs(kw)
             import soundfile as sf  # local import keeps module import cheap
             import torch
 
