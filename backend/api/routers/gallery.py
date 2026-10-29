@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -19,6 +19,7 @@ from core.db import db_conn
 from core.config import VOICES_DIR, OUTPUTS_DIR
 from core import event_bus
 from core.audio_validation import resolve_regular_file
+from api.dependencies import require_admin
 from core.file_cleanup import FileCleanupError, unlink_if_present
 from core.media_types import MEDIA_EXTS, media_extension, unsupported_media_detail
 from core.url_safety import (
@@ -34,7 +35,7 @@ from services.ffmpeg_utils import spawn_subprocess
 
 logger = logging.getLogger("omnivoice.gallery")
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 VOICE_GALLERY_DIR = Path(os.path.join(OUTPUTS_DIR, "voice_gallery"))
 VOICE_GALLERY_DIR.mkdir(parents=True, exist_ok=True)
