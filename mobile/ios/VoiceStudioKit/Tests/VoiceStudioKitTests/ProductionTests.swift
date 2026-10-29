@@ -19,6 +19,8 @@ import Testing
     #expect(plan.segments.map(\.text) == ["Did you hear that?", "Only the wind."])
     #expect(plan.segments.map(\.role) == ["Alice", "Bob"])
     #expect(plan.segments[0].speed == 1.5)
+    // A desktop tag may span lines; neither half is spoken.
+    #expect(try ProductionPlan(script: "[emotion:  very\n  tired  ] Yawn.").segments.map(\.text) == ["Yawn."])
 }
 
 @Test func designedVoiceRetainsSeedRecipeAndMarkedReferenceWithoutASR() async throws {

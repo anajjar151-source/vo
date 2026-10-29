@@ -23,6 +23,8 @@ class ProductionTest {
         assertEquals(listOf("Did you hear that?", "Only the wind."), plan.segments.map { it.text })
         assertEquals(listOf("Alice", "Bob"), plan.segments.map { it.role })
         assertEquals(1.5f, plan.segments[0].speed)
+        // A desktop tag may span lines; neither half is spoken.
+        assertEquals(listOf("Yawn."), ProductionPlan.parse("[emotion:  very\n  tired  ] Yawn.").segments.map { it.text })
     }
     @Test fun restartResumesAndVoiceOrModelChangesInvalidateOutput() = runTest {
         val root = File(temporary.root, "production")
