@@ -22,10 +22,18 @@ public struct ProductionPlan: Sendable {
         var segments: [ProductionSegment] = [], chapters = [""], role = ""
         // Desktop [emotion:TEXT] directions (#3422): phone models take no emotion, so the tag is
         // dropped (never read aloud). Stripped from the whole script before it is split into lines,
-        // because a desktop tag may span lines, and so before the [voice:]/[speed:] prefix checks so
-        // any tag order works; case-insensitive like the desktop parser.
+        // because a desktop tag may span lines; the line breaks inside a tag are kept so a voice tag
+        // after it still starts its line. A tag never spans a "# " heading, which the desktop
+        // parser splits first. Case-insensitive like the desktop parser.
         let emotionPattern = try NSRegularExpression(pattern: "\\[emotion:[^\\]\\[]*\\]", options: [.caseInsensitive])
-        let spoken = emotionPattern.stringByReplacingMatches(in: script, range: NSRange(script.startIndex..., in: script), withTemplate: " ")
+        let stripped = NSMutableString(string: script)
+        for tag in emotionPattern.matches(in: script, range: NSRange(script.startIndex..., in: script)).reversed() {
+            let text = stripped.substring(with: tag.range)
+            if text.range(of: "[\\r\\n][ \\t]*# ", options: .regularExpression) != nil { continue }
+            let breaks = text.filter(\.isNewline)
+            stripped.replaceCharacters(in: tag.range, with: breaks.isEmpty ? " " : breaks)
+        }
+        let spoken = stripped as String
         for raw in spoken.components(separatedBy: .newlines) {
             var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.hasPrefix("# ") {
@@ -127,7 +135,10 @@ public actor ProductionStore {
     private func key(_ project: ProductionProject, _ configuration: String) throws -> String {
         // Titles and save timestamps don't affect audio; script, cast and engine revisions do.
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(["narration-v2",project.script, project.defaultVoice, String(project.speed ?? 1), String(decoding: encoder.encode(project.pronunciations ?? [:]),as: UTF8.self), String(decoding: encoder.encode(project.cast),as: UTF8.self), configuration])
+        // Scripts with a desktop [emotion:] tag parse differently since #3422 (the tag is no longer
+        // spoken), so only they get a new key; every other script keeps its renders.
+        let version = project.script.range(of: "[emotion:", options: .caseInsensitive) == nil ? "narration-v2" : "narration-v3"
+        let data = try encoder.encode([version,project.script, project.defaultVoice, String(project.speed ?? 1), String(decoding: encoder.encode(project.pronunciations ?? [:]),as: UTF8.self), String(decoding: encoder.encode(project.cast),as: UTF8.self), configuration])
         return SHA256.hash(data: data).map { String(format: "%02x",$0) }.joined()
     }
     private func renderDirectory(_ project: ProductionProject, _ configuration: String) throws -> URL {

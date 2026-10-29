@@ -25,6 +25,14 @@ class ProductionTest {
         assertEquals(1.5f, plan.segments[0].speed)
         // A desktop tag may span lines; neither half is spoken.
         assertEquals(listOf("Yawn."), ProductionPlan.parse("[emotion:  very\n  tired  ] Yawn.").segments.map { it.text })
+        // Its line break is kept, so a voice tag after it still switches the voice.
+        val switched = ProductionPlan.parse("[voice:Alice] Hello [emotion:sad\nquiet] [voice:Bob] Bye")
+        assertEquals(listOf("Hello", "Bye"), switched.segments.map { it.text })
+        assertEquals(listOf("Alice", "Bob"), switched.segments.map { it.role })
+        // An unclosed tag never swallows the next chapter.
+        val unclosed = ProductionPlan.parse("[emotion:quiet\n# Two\nA bracket ] closes here.")
+        assertEquals("Two", unclosed.chapters.last())
+        assertEquals("A bracket ] closes here.", unclosed.segments.last().text)
     }
     @Test fun restartResumesAndVoiceOrModelChangesInvalidateOutput() = runTest {
         val root = File(temporary.root, "production")
