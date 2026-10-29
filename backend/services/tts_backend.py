@@ -458,6 +458,13 @@ class TTSBackend(ABC):
         """:attr:`cloning_model_keys` as the model picker labels them."""
         return cls.cloning_model_keys
 
+    #: Whether this engine honors the diffusion quality knobs
+    #: (``num_step``, ``guidance_scale``). Default True — the bundled
+    #: ``omnivoice-tts`` CLI backing omnivoice-gguf has no such flags, so
+    #: that engine sets this False and callers asking for them get a 400
+    #: instead of silently default-quality audio (#3654).
+    supports_quality_knobs: bool = True
+
     #: GPU/accelerator targets the engine can run on. Surfaced via the
     #: Engine Compatibility Matrix (Plan 02-04 / ENGINE-06) so users can
     #: tell at a glance which engines will use their hardware. Defaults to

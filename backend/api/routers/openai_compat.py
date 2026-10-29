@@ -824,6 +824,30 @@ async def create_speech(req: SpeechRequest):
         # length-scaled one (#1190) — this route used to hardcode the flat 300s,
         # so long inputs failed here even after v0.3.22 shipped the scaling.
         from services.model_manager import generate_timeout_s
+        # Engines whose runtime has no quality-knob flags (omnivoice-gguf:
+        # the bundled CLI accepts no num_step/guidance_scale) reject
+        # explicit values here, where "the caller asked" is still known.
+        # Deeper layers can't tell an explicit request from an internal
+        # default fill — dubbing previews always pass num_step=8 — so the
+        # engine itself stays permissive (#3654 review).
+        if (req.num_step is not None or req.guidance_scale is not None) and not getattr(
+            backend, "supports_quality_knobs", True
+        ):
+            from services.tts_backend import TTSInputError
+
+            asked = ", ".join(
+                k
+                for k, v in (
+                    ("num_step", req.num_step),
+                    ("guidance_scale", req.guidance_scale),
+                )
+                if v is not None
+            )
+            raise TTSInputError(
+                f"Engine '{backend.id}' does not support {asked}: the bundled "
+                f"runtime has no such options, so returning audio would silently "
+                f"ignore them. Omit {asked} or use the in-process omnivoice engine."
+            )
         wav, sr = await run_on_gpu_pool_guarded(
             lambda: _run_tts(backend, text, kw), what="OpenAI TTS generate",
             timeout=generate_timeout_s(text, engine=backend))

@@ -25,7 +25,7 @@ metadata and the backend fallback mirror it.
 - Smart Fit speed limits: set the fastest and slowest speed dubbing may apply to a line, from the Timing section (#3026) — thanks @MoonDragon-MD!
 
 ### Fixed
-- The GGUF engine rejects explicit non-default num_step and guidance_scale instead of silently returning default-quality audio (#3654) — thanks @swadhinbiswas!
+- Explicit num_step and guidance_scale on engines whose runtime has no such flags now get a 400 naming the parameter instead of silently default-quality audio (#3654) — thanks @swadhinbiswas!
 
 - Bug reports no longer risk freezing the app while looking for your tools: the Node-version folder scan now runs off the main thread (#3180)
 - Bug reports no longer freeze the app when the tool search or a drive stalls, and free disk is only borrowed from a parent folder when the install folder doesn't exist yet (#3179)

@@ -648,36 +648,24 @@ def test_select_default_falls_back_on_zero_byte_placeholder(monkeypatch, tmp_pat
     assert gguf_backend.select_default_engine() == "omnivoice"
 
 
-def test_generate_rejects_explicit_quality_knobs():
-    """#3654: num_step/guidance_scale are silently dropped on this path
-    (the binary has no such flag), so an explicit non-default raises
-    instead of returning files identical to the default call."""
+def test_generate_leaves_quality_knobs_to_the_caller(monkeypatch):
+    """#3654 review: the engine itself stays permissive — it cannot tell an
+    explicit user request (num_step=32) from an internal default fill
+    (dubbing previews always pass num_step=8), so validation lives at the
+    API boundary (400 there) and every value here proceeds identically to
+    normal binary handling. The class flag advertises the lack of support.
+    """
     from engines.omnivoice_gguf import backend as gguf_backend
 
     cls = gguf_backend._make_backend_class()
-    backend = cls()
-
-    with pytest.raises(ValueError, match="num_step"):
-        backend.generate("hello world", num_step=32)
-    with pytest.raises(ValueError, match="guidance_scale"):
-        backend.generate("hello world", guidance_scale=5.0)
-
-
-def test_generate_accepts_app_default_quality_knobs(monkeypatch, tmp_path):
-    """Default-filled pipeline calls (num_step=16, guidance_scale=2.0 —
-    what tts_backend always passes) proceed past the guard to normal
-    handling, never the ValueError."""
-    from engines.omnivoice_gguf import backend as gguf_backend
-
-    cls = gguf_backend._make_backend_class()
+    assert cls.supports_quality_knobs is False
     backend = cls()
     monkeypatch.setattr(
         backend, "_resolve_quant_paths",
         lambda: (_ for _ in ()).throw(FileNotFoundError("test-no-binary")),
     )
 
-    with pytest.raises(FileNotFoundError, match="test-no-binary"):
-        backend.generate("hello world", num_step=16, guidance_scale=2.0)
-    # And a bare call with no quality knobs at all takes the same path.
-    with pytest.raises(FileNotFoundError, match="test-no-binary"):
-        backend.generate("hello world")
+    for kw in ({}, {"num_step": 16}, {"num_step": 8}, {"num_step": 32},
+               {"guidance_scale": 5.0}):
+        with pytest.raises(FileNotFoundError, match="test-no-binary"):
+            backend.generate("hello world", **kw)
