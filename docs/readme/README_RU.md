@@ -25,7 +25,16 @@
   </p>
 </div>
 
-![Обзор приложения: клонирование голоса, создание голоса, дубляж и управление моделями](../../docs/media/electron/voicestudio.gif)
+<p align="center">
+  <a href="../../docs/media/electron/voicestudio.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 768px)" srcset="../../docs/media/electron/voice-cloning.webp" />
+      <source media="(prefers-reduced-motion: reduce)" srcset="../../docs/media/electron/voice-cloning.png" />
+      <img src="../../docs/media/electron/voicestudio.gif" alt="Обзор приложения: клонирование голоса, создание голоса, дубляж и управление моделями" width="100%" />
+    </picture>
+  </a><br />
+  <sub>Демонстрационное пространство · Стандартная тёмная тема · <a href="../../docs/media/electron/voicestudio.mp4">Смотреть HD-обзор</a></sub>
+</p>
 
 <p align="center">
   <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-993f61?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="Скачать" height="24" /></a>
@@ -37,29 +46,41 @@
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-cloning.png" alt="Рабочее пространство клонирования голоса со встроенным демонстрационным голосом" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-cloning.png"><img src="../../docs/media/electron/voice-cloning.webp" alt="Рабочее пространство клонирования голоса со встроенным демонстрационным голосом" width="100%" /></a><br />
       <strong><a href="../../docs/audio-quality.md">Клонирование голоса</a></strong><br />
       Создавайте речь знакомым голосом по чистой эталонной записи.
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/dubbing.png" alt="Экран дубляжа в приложении Electron" width="100%" /><br />
+      <a href="../../docs/media/electron/dubbing.png"><img src="../../docs/media/electron/dubbing.webp" alt="Экран дубляжа в приложении Electron" width="100%" /></a><br />
       <strong><a href="../../docs/electron-dubbing.md">Дубляж</a></strong><br />
       Переводите и озвучивайте видео с сохранением исходного тайминга.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-design.png" alt="Голос задаётся текстовым описанием на экране голосового дизайна" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-design.png"><img src="../../docs/media/electron/voice-design.webp" alt="Голос задаётся текстовым описанием на экране голосового дизайна" width="100%" /></a><br />
       <strong><a href="../../docs/electron-voice-design.md">Голосовой дизайн</a></strong><br />
       Опишите нужный голос словами и создайте его.
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/models.png" alt="Скачивание, обновление и удаление речевых моделей на компьютере" width="100%" /><br />
+      <a href="../../docs/media/electron/models.png"><img src="../../docs/media/electron/models.webp" alt="Скачивание, обновление и удаление речевых моделей на компьютере" width="100%" /></a><br />
       <strong><a href="../../docs/downloading-models.md">Модели</a></strong><br />
       Выбирайте движки и скачивайте только нужные модели.
     </td>
   </tr>
 </table>
+
+<details>
+<summary><strong>Другие скриншоты</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href="../../docs/media/electron/overview.png"><img src="../../docs/media/electron/overview.webp" alt="Обзор рабочего пространства" width="100%" /></a><br /><strong>Обзор рабочего пространства</strong></td>
+    <td width="50%"><a href="../../docs/media/electron/model-packs.png"><img src="../../docs/media/electron/model-packs.webp" alt="Наборы моделей" width="100%" /></a><br /><strong>Наборы моделей</strong></td>
+  </tr>
+</table>
+
+</details>
 
 - **Диктовка и расшифровка** — Компактное окно диктовки и локальная расшифровка
 - **Озвучка и пакетная обработка** — Рассказы, аудиокниги и очередь заданий

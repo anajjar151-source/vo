@@ -25,7 +25,16 @@
   </p>
 </div>
 
-![앱 둘러보기: 음성 복제, 보이스 디자인, 더빙, 모델 관리](../../docs/media/electron/voicestudio.gif)
+<p align="center">
+  <a href="../../docs/media/electron/voicestudio.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 768px)" srcset="../../docs/media/electron/voice-cloning.webp" />
+      <source media="(prefers-reduced-motion: reduce)" srcset="../../docs/media/electron/voice-cloning.png" />
+      <img src="../../docs/media/electron/voicestudio.gif" alt="앱 둘러보기: 음성 복제, 보이스 디자인, 더빙, 모델 관리" width="100%" />
+    </picture>
+  </a><br />
+  <sub>데모 작업 공간 · 기본 다크 테마 · <a href="../../docs/media/electron/voicestudio.mp4">HD 둘러보기</a></sub>
+</p>
 
 <p align="center">
   <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/%EB%82%B4%EB%A0%A4%EB%B0%9B%EA%B8%B0-993f61?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="내려받기" height="24" /></a>
@@ -37,29 +46,41 @@
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-cloning.png" alt="기본 제공 데모 음성이 열린 음성 복제 워크스페이스" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-cloning.png"><img src="../../docs/media/electron/voice-cloning.webp" alt="기본 제공 데모 음성이 열린 음성 복제 워크스페이스" width="100%" /></a><br />
       <strong><a href="../../docs/audio-quality.md">음성 복제</a></strong><br />
       깨끗한 참조 녹음으로 익숙한 목소리의 음성을 생성하세요.
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/dubbing.png" alt="영상 더빙 워크스페이스" width="100%" /><br />
+      <a href="../../docs/media/electron/dubbing.png"><img src="../../docs/media/electron/dubbing.webp" alt="영상 더빙 워크스페이스" width="100%" /></a><br />
       <strong><a href="../../docs/electron-dubbing.md">영상 더빙</a></strong><br />
       영상을 번역하고 원본 타이밍에 맞춰 더빙하세요.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-design.png" alt="보이스 디자인 워크스페이스에서 목소리를 묘사하기" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-design.png"><img src="../../docs/media/electron/voice-design.webp" alt="보이스 디자인 워크스페이스에서 목소리를 묘사하기" width="100%" /></a><br />
       <strong><a href="../../docs/electron-voice-design.md">보이스 디자인</a></strong><br />
       원하는 목소리를 글로 설명하고 생성하세요.
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/models.png" alt="로컬 음성 모델 설치 및 관리" width="100%" /><br />
+      <a href="../../docs/media/electron/models.png"><img src="../../docs/media/electron/models.webp" alt="로컬 음성 모델 설치 및 관리" width="100%" /></a><br />
       <strong><a href="../../docs/downloading-models.md">로컬 모델</a></strong><br />
       엔진을 고르고 필요한 모델만 내려받으세요.
     </td>
   </tr>
 </table>
+
+<details>
+<summary><strong>스크린샷 더 보기</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href="../../docs/media/electron/overview.png"><img src="../../docs/media/electron/overview.webp" alt="작업 공간 개요" width="100%" /></a><br /><strong>작업 공간 개요</strong></td>
+    <td width="50%"><a href="../../docs/media/electron/model-packs.png"><img src="../../docs/media/electron/model-packs.webp" alt="모델 팩" width="100%" /></a><br /><strong>모델 팩</strong></td>
+  </tr>
+</table>
+
+</details>
 
 - **받아쓰기와 전사** — 플로팅 받아쓰기 위젯과 로컬 전사
 - **내레이션과 일괄 처리** — 스토리, 오디오북, 대기열 작업

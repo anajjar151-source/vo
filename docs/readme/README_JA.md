@@ -25,7 +25,16 @@
   </p>
 </div>
 
-![アプリのツアー：音声クローン、ボイスデザイン、吹き替え、モデル管理](../../docs/media/electron/voicestudio.gif)
+<p align="center">
+  <a href="../../docs/media/electron/voicestudio.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 768px)" srcset="../../docs/media/electron/voice-cloning.webp" />
+      <source media="(prefers-reduced-motion: reduce)" srcset="../../docs/media/electron/voice-cloning.png" />
+      <img src="../../docs/media/electron/voicestudio.gif" alt="アプリのツアー：音声クローン、ボイスデザイン、吹き替え、モデル管理" width="100%" />
+    </picture>
+  </a><br />
+  <sub>デモ用ワークスペース · 標準ダークテーマ · <a href="../../docs/media/electron/voicestudio.mp4">HD ツアーを見る</a></sub>
+</p>
 
 <p align="center">
   <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-993f61?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="ダウンロード" height="24" /></a>
@@ -37,29 +46,41 @@
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-cloning.png" alt="同梱のデモ音声を使った音声クローンワークスペース" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-cloning.png"><img src="../../docs/media/electron/voice-cloning.webp" alt="同梱のデモ音声を使った音声クローンワークスペース" width="100%" /></a><br />
       <strong><a href="../../docs/audio-quality.md">音声クローン</a></strong><br />
       クリアな参照音声から、なじみのある声で読み上げを生成。
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/dubbing.png" alt="動画吹き替えワークスペース" width="100%" /><br />
+      <a href="../../docs/media/electron/dubbing.png"><img src="../../docs/media/electron/dubbing.webp" alt="動画吹き替えワークスペース" width="100%" /></a><br />
       <strong><a href="../../docs/electron-dubbing.md">動画吹き替え</a></strong><br />
       動画を翻訳し、元のタイミングに合わせて吹き替え。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-design.png" alt="ボイスデザインワークスペースで声を説明する" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-design.png"><img src="../../docs/media/electron/voice-design.webp" alt="ボイスデザインワークスペースで声を説明する" width="100%" /></a><br />
       <strong><a href="../../docs/electron-voice-design.md">ボイスデザイン</a></strong><br />
       欲しい声を言葉で説明して生成。
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/models.png" alt="ローカル音声モデルのインストールと管理" width="100%" /><br />
+      <a href="../../docs/media/electron/models.png"><img src="../../docs/media/electron/models.webp" alt="ローカル音声モデルのインストールと管理" width="100%" /></a><br />
       <strong><a href="../../docs/downloading-models.md">ローカルモデル</a></strong><br />
       エンジンを選び、必要なモデルだけをダウンロード。
     </td>
   </tr>
 </table>
+
+<details>
+<summary><strong>その他のスクリーンショット</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href="../../docs/media/electron/overview.png"><img src="../../docs/media/electron/overview.webp" alt="ワークスペースの概要" width="100%" /></a><br /><strong>ワークスペースの概要</strong></td>
+    <td width="50%"><a href="../../docs/media/electron/model-packs.png"><img src="../../docs/media/electron/model-packs.webp" alt="モデルパック" width="100%" /></a><br /><strong>モデルパック</strong></td>
+  </tr>
+</table>
+
+</details>
 
 - **音声入力と文字起こし** — フローティング音声入力とローカル文字起こし
 - **ナレーションと一括処理** — ストーリー、オーディオブック、キュー処理

@@ -25,7 +25,16 @@
   </p>
 </div>
 
-![A tour of the app: voice cloning, voice design, dubbing, and model management](docs/media/electron/voicestudio.gif)
+<p align="center">
+  <a href="docs/media/electron/voicestudio.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 768px)" srcset="docs/media/electron/voice-cloning.webp" />
+      <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/electron/voice-cloning.png" />
+      <img src="docs/media/electron/voicestudio.gif" alt="A tour of the app: voice cloning, voice design, dubbing, and model management" width="100%" />
+    </picture>
+  </a><br />
+  <sub>Demo workspace · Default dark theme · <a href="docs/media/electron/voicestudio.mp4">Watch the HD tour</a></sub>
+</p>
 
 <p align="center">
   <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/Download-993f61?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="Download" height="24" /></a>
@@ -37,29 +46,41 @@
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/media/electron/voice-cloning.png" alt="Voice cloning workspace with the bundled demo voice" width="100%" /><br />
+      <a href="docs/media/electron/voice-cloning.png"><img src="docs/media/electron/voice-cloning.webp" alt="Voice cloning workspace with the bundled demo voice" width="100%" /></a><br />
       <strong><a href="docs/audio-quality.md">Voice cloning</a></strong><br />
       Turn a clean reference recording into speech in a familiar voice.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/media/electron/dubbing.png" alt="Video dubbing workspace" width="100%" /><br />
+      <a href="docs/media/electron/dubbing.png"><img src="docs/media/electron/dubbing.webp" alt="Video dubbing workspace" width="100%" /></a><br />
       <strong><a href="docs/electron-dubbing.md">Video dubbing</a></strong><br />
       Translate and dub videos with speech timed to the original.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/media/electron/voice-design.png" alt="Describe a voice in the voice design workspace" width="100%" /><br />
+      <a href="docs/media/electron/voice-design.png"><img src="docs/media/electron/voice-design.webp" alt="Describe a voice in the voice design workspace" width="100%" /></a><br />
       <strong><a href="docs/electron-voice-design.md">Voice design</a></strong><br />
       Describe a voice in words and generate it.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/media/electron/models.png" alt="Install and manage local speech models" width="100%" /><br />
+      <a href="docs/media/electron/models.png"><img src="docs/media/electron/models.webp" alt="Install and manage local speech models" width="100%" /></a><br />
       <strong><a href="docs/downloading-models.md">Local models</a></strong><br />
       Choose your engines and download only the models you need.
     </td>
   </tr>
 </table>
+
+<details>
+<summary><strong>More screenshots</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href="docs/media/electron/overview.png"><img src="docs/media/electron/overview.webp" alt="Workspace overview" width="100%" /></a><br /><strong>Workspace overview</strong></td>
+    <td width="50%"><a href="docs/media/electron/model-packs.png"><img src="docs/media/electron/model-packs.webp" alt="Model packs" width="100%" /></a><br /><strong>Model packs</strong></td>
+  </tr>
+</table>
+
+</details>
 
 - **Dictate & transcribe** — A floating dictation widget and local transcription
 - **Narrate & batch** — Stories, audiobooks and queued jobs

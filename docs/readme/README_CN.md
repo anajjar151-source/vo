@@ -25,7 +25,16 @@
   </p>
 </div>
 
-![应用导览：声音克隆、声音设计、配音和模型管理](../../docs/media/electron/voicestudio.gif)
+<p align="center">
+  <a href="../../docs/media/electron/voicestudio.mp4">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce) and (max-width: 768px)" srcset="../../docs/media/electron/voice-cloning.webp" />
+      <source media="(prefers-reduced-motion: reduce)" srcset="../../docs/media/electron/voice-cloning.png" />
+      <img src="../../docs/media/electron/voicestudio.gif" alt="应用导览：声音克隆、声音设计、配音和模型管理" width="100%" />
+    </picture>
+  </a><br />
+  <sub>演示工作区 · 默认深色主题 · <a href="../../docs/media/electron/voicestudio.mp4">观看高清演示</a></sub>
+</p>
 
 <p align="center">
   <a href="https://github.com/debpalash/VoiceStudio/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-993f61?style=for-the-badge&amp;logo=github&amp;logoColor=ffffff" alt="下载" height="24" /></a>
@@ -37,29 +46,41 @@
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-cloning.png" alt="使用内置演示声音的声音克隆工作区" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-cloning.png"><img src="../../docs/media/electron/voice-cloning.webp" alt="使用内置演示声音的声音克隆工作区" width="100%" /></a><br />
       <strong><a href="../../docs/audio-quality.md">声音克隆</a></strong><br />
       用一段清晰的参考录音，生成熟悉声音的语音。
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/dubbing.png" alt="视频配音工作区" width="100%" /><br />
+      <a href="../../docs/media/electron/dubbing.png"><img src="../../docs/media/electron/dubbing.webp" alt="视频配音工作区" width="100%" /></a><br />
       <strong><a href="../../docs/electron-dubbing.md">视频配音</a></strong><br />
       翻译并配音视频，让语音与原片时间对齐。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/voice-design.png" alt="在声音设计工作区中描述声音" width="100%" /><br />
+      <a href="../../docs/media/electron/voice-design.png"><img src="../../docs/media/electron/voice-design.webp" alt="在声音设计工作区中描述声音" width="100%" /></a><br />
       <strong><a href="../../docs/electron-voice-design.md">声音设计</a></strong><br />
       用文字描述你想要的声音，然后生成。
     </td>
     <td width="50%" valign="top">
-      <img src="../../docs/media/electron/models.png" alt="安装和管理本地语音模型" width="100%" /><br />
+      <a href="../../docs/media/electron/models.png"><img src="../../docs/media/electron/models.webp" alt="安装和管理本地语音模型" width="100%" /></a><br />
       <strong><a href="../../docs/downloading-models.md">本地模型</a></strong><br />
       自由选择引擎，只下载你需要的模型。
     </td>
   </tr>
 </table>
+
+<details>
+<summary><strong>更多截图</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href="../../docs/media/electron/overview.png"><img src="../../docs/media/electron/overview.webp" alt="工作区概览" width="100%" /></a><br /><strong>工作区概览</strong></td>
+    <td width="50%"><a href="../../docs/media/electron/model-packs.png"><img src="../../docs/media/electron/model-packs.webp" alt="模型组合" width="100%" /></a><br /><strong>模型组合</strong></td>
+  </tr>
+</table>
+
+</details>
 
 - **听写与转录** — 悬浮听写窗口与本地转录
 - **朗读与批量处理** — 故事、有声书与排队任务
