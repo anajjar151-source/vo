@@ -100,8 +100,9 @@ jobs:
   ios:
     # Same SDK as the TestFlight upload, so App Store toolchain breaks show up here first.
     runs-on: macos-26
-    # Leave room for cold native builds plus simulator and device validation.
-    timeout-minutes: 60
+    # Cold simulator/device compilation can exhaust an hour after tests pass.
+    # Keep the full validation run bounded without relaxing UI-test deadlines.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

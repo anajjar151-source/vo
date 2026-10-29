@@ -2598,7 +2598,7 @@ class OpenAICompatASRBackend(ASRBackend):
     def is_available(cls) -> tuple[bool, str]:
         base_url = resolve_openai_compat_asr_base_url()
         if not base_url:
-            return False, "Configure a server endpoint in Model Catalogue"
+            return False, "Configure a server endpoint in Settings → Models → ASR"
         try:
             normalize_openai_compat_asr_base_url(base_url)
         except ValueError as exc:
@@ -2802,7 +2802,7 @@ _INSTALL_HINTS: dict[str, str] = {
     "sherpa-onnx-asr": "uv add sherpa-onnx  (ONNX live dictation; CPU, cross-platform)",
     "openai-compat-asr": (
         "No install needed — configure a server endpoint in "
-        "Model Catalogue. Points VoiceStudio at any OpenAI-compatible "
+        "Settings → Models → ASR. Points VoiceStudio at any OpenAI-compatible "
         "server (a self-hosted Qwen3-ASR/FunASR/SenseVoice server, OpenAI's "
         "own Whisper API, or similar) — a path to Qwen3-ASR today, without "
         "waiting on a direct transformers integration."

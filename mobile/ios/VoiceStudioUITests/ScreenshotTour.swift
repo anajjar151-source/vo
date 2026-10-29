@@ -14,7 +14,7 @@ final class ScreenshotTour: XCTestCase {
         XCTAssertTrue(app.buttons["consent.yes"].exists)
         XCTAssertFalse(app.buttons["consent.dismiss"].exists)
         shot(app, "01-consent")
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
 
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         shot(app, "02-home")

@@ -78,11 +78,11 @@ export function GeneratePanel({
   const hideStatus = session.active === null && blocker === 'engine';
 
   return (
-    <div data-slot="generate-panel" className="flex flex-col gap-2">
+    <div data-slot="generate-panel" className="flex min-h-0 flex-col gap-2">
       {session.failed > 0 && <Note>{t('audiobook.failed_note', { count: session.failed })}</Note>}
       {session.stopped && session.active === null && <Note>{t('audiobook.stopped_note')}</Note>}
       {mine && session.stage !== 'starting' && (
-        <div className="max-h-[38vh] overflow-y-auto">
+        <div className="max-h-[38vh] min-h-0 overflow-y-auto">
           <GenerationProgress
             chapters={session.chapters}
             assembling={session.stage === 'assembling'}

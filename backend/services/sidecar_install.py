@@ -1903,16 +1903,30 @@ def _step_fetch_weights(spec: SidecarSpec, job: dict) -> None:
         tqdm_cls = hf_progress.tracked_tqdm_class()
         if tqdm_cls is not None:
             kwargs["tqdm_class"] = tqdm_cls
-        try:
-            snapshot_download(**kwargs)  # nosec B615 — deliberate default-branch policy, see above
-        except Exception as exc:
-            if _is_disk_full(exc):
-                raise _StepError(f"Model weight download failed: {_redact(exc)}", _DISK_FULL_REMEDIATION) from exc
-            raise _StepError(
-                f"Model weight download failed: {_redact(exc)}",
-                "Re-run the install — the download resumes where it stopped. "
-                "Check Settings → Network (HF endpoint / proxy) if it keeps failing.",
-            ) from exc
+        for attempt in range(2):
+            try:
+                snapshot_download(**kwargs)  # nosec B615 — deliberate default-branch policy, see above
+                break
+            except Exception as exc:
+                if _is_disk_full(exc):
+                    raise _StepError(f"Model weight download failed: {_redact(exc)}", _DISK_FULL_REMEDIATION) from exc
+                # A public probe cannot prove that this repository's files
+                # work. Match setup/cache repair: only an automatic, network-
+                # classified failure that changes the winner gets one retry.
+                if attempt == 0 and endpoint_race.reselect_after_failure(spec.weights_repo_id, str(exc)):
+                    endpoint = endpoint_race.effective_endpoint()
+                    if endpoint:
+                        kwargs["endpoint"] = endpoint
+                    else:
+                        kwargs.pop("endpoint", None)
+                    kwargs["token"] = token_for_endpoint(endpoint, _bearer)
+                    _log(job, "Download endpoint changed — retrying model weights once.")
+                    continue
+                raise _StepError(
+                    f"Model weight download failed: {_redact(exc)}",
+                    "Re-run the install — the download resumes where it stopped. "
+                    "Check Settings → Network (HF endpoint / proxy) if it keeps failing.",
+                ) from exc
     finally:
         hf_progress.unregister_listener(listener_id)
         hf_progress.current_repo_id.reset(repo_token)

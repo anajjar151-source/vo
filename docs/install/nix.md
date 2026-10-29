@@ -23,8 +23,6 @@ nix develop .#fhs
 nix run .#fhs
 
 # Inside the environment, install dependencies and launch the app
-bun install
-bun run setup:api
 bun run dev
 ```
 
@@ -41,8 +39,6 @@ cd VoiceStudio
 nix develop
 
 # Install dependencies and launch the app
-bun install
-bun run setup:api
 bun run dev
 ```
 

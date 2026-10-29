@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { runtimeLaunchRefusal } from './runtime-launch-refusal';
 
 export const WINDOWS_ROCM_PYTHON_REQUEST = 'cpython-3.12-windows-x86_64';
 export const WINDOWS_ROCM_MODULE = 'backend.core.windows_rocm.install';
@@ -82,7 +83,7 @@ export async function windowsRocmReady(
   return ready;
 }
 
-/** Native verification is owned by the shared CLI. Every error/timeout fails closed. */
+/** Verification fails closed; launch refusals propagate without triggering a reinstall. */
 function probeWindowsRocmReady(project: string): Promise<boolean> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -92,21 +93,35 @@ function probeWindowsRocmReady(project: string): Promise<boolean> {
   };
   delete env.PYTHONHOME;
   delete env.PYTHONPATH;
-  return new Promise((resolve) => {
-    execFile(
-      join(project, '.venv/Scripts/python.exe'),
-      ['-m', WINDOWS_ROCM_MODULE, '--verify-only'],
-      { cwd: project, env, windowsHide: true, timeout: 120_000, maxBuffer: 256 * 1024 },
-      (error, stdout) => {
-        let ready = false;
-        try {
-          const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? '');
-          ready = !error && report.ready === true && report.scope === 'model-free';
-        } catch {
-          /* Missing/malformed output cannot certify a native environment. */
-        }
-        resolve(ready);
-      },
-    );
+  return new Promise((resolve, reject) => {
+    const python = join(project, '.venv/Scripts/python.exe');
+    const complete = (error: unknown, stdout = '') => {
+      const refusal = runtimeLaunchRefusal(python, error);
+      if (refusal) {
+        reject(refusal);
+        return;
+      }
+      let ready = false;
+      try {
+        const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? '');
+        ready = !error && report.ready === true && report.scope === 'model-free';
+      } catch {
+        /* Missing/malformed output cannot certify a native environment. */
+      }
+      resolve(ready);
+    };
+    try {
+      execFile(
+        python,
+        ['-m', WINDOWS_ROCM_MODULE, '--verify-only'],
+        { cwd: project, env, windowsHide: true, timeout: 120_000, maxBuffer: 256 * 1024 },
+        complete,
+      );
+    } catch (error) {
+      const refusal = runtimeLaunchRefusal(python, error);
+      if (refusal) reject(refusal);
+      else if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') complete(error);
+      else reject(error);
+    }
   });
 }

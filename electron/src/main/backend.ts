@@ -2,6 +2,7 @@ import { decideMissingRuntime, runtimeWasInstalled } from './runtime-repair';
 import { windowsRocmInstalled, windowsRocmRequested } from './runtime-windows-rocm';
 import { runtimeProjectReady } from './runtime-readiness';
 import { runRuntimeProbe } from './runtime-probe';
+import { RuntimeLaunchRefusedError } from './runtime-launch-refusal';
 import { pypiFilesHost } from './pypi-mirror';
 import {
   installRuntime,
@@ -571,7 +572,7 @@ export function devRendererPort(rendererUrl: string | undefined): string | null 
 
 function childEnv(
   port: number,
-  region: RuntimeRegion = 'auto',
+  _region: RuntimeRegion = 'auto',
   platform = process.platform,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
@@ -629,7 +630,8 @@ function childEnv(
   if (app.isPackaged && process.resourcesPath && !env.OMNIVOICE_FRONTEND_DIST?.trim()) {
     env.OMNIVOICE_FRONTEND_DIST = bundledWebUiPath();
   }
-  if (region === 'china') env.HF_ENDPOINT ??= 'https://hf-mirror.com';
+  // Region defaults must leave HF_ENDPOINT unset so the backend can probe and
+  // fail over. Only an explicit user endpoint may disable automatic selection.
   if (platform === 'win32') {
     env.TORCHDYNAMO_DISABLE = '1';
     env.HF_HUB_DISABLE_SYMLINKS = '1';
@@ -702,9 +704,9 @@ function readSmartAppControl(platform = process.platform): SmartAppControl {
 }
 
 /** A failed spawn names the program, not just the OS error. Windows denies a
- *  blocked executable with a bare `spawn UNKNOWN`; runtime-owned launches get
- *  the install that owns the program, while custom `OMNIVOICE_BACKEND_CMD`
- *  launches point at their own executable instead (#2440). When Smart App
+ *  blocked executable with a bare `spawn UNKNOWN`; missing runtime-owned programs
+ *  point at their install, while custom `OMNIVOICE_BACKEND_CMD` launches point
+ *  at their own executable instead (#2440). When Smart App
  *  Control is on, it is named: it has no per-app exceptions, so the usual
  *  antivirus-exclusion advice cannot help (#3224). */
 export function spawnFailureMessage(
@@ -725,9 +727,18 @@ export function spawnFailureMessage(
       return `Could not start ${command}: ${detail}. Windows Smart App Control blocked it.`;
     }
   }
+  // Refused execution is not evidence of a broken installation. The renderer
+  // adds its localized permission/security hint to this diagnostic.
+  if (runtimeOwned && code !== 'ENOENT') return `Could not start ${command}: ${detail}`;
   return runtimeOwned
     ? `Could not start ${command}: ${detail}. Install or repair the local runtime, then restart VoiceStudio.`
     : `Could not start ${command}: ${detail}. Check that the program exists and can be launched, then try again.`;
+}
+
+function runtimeFailureMessage(error: unknown): string {
+  return error instanceof RuntimeLaunchRefusedError
+    ? spawnFailureMessage(error.program, error.cause)
+    : errorMessage(error);
 }
 
 /** A backend that Windows stopped from loading one of its files names who did
@@ -1104,7 +1115,7 @@ export class BackendSupervisor extends EventEmitter<{
       void this.waitUntilReady(gen, startupBudgetMs());
     } catch (error) {
       if (gen !== this.generation) return;
-      const message = errorMessage(error);
+      const message = runtimeFailureMessage(error);
       this.pushLog('err', message);
       this.setStage('failed', { message });
     }
@@ -1306,8 +1317,9 @@ export class BackendSupervisor extends EventEmitter<{
           code === 'ENOSPC' ? (error as { requiredGib?: number }).requiredGib : undefined;
         this.runtimeRepairFailed = this.repairAttempted;
         this.runtimeInterrupted = await runtimeInstallInterrupted(project);
-        this.pushLog('err', errorMessage(error));
-        this.setStage('setup_required', { message: errorMessage(error) });
+        const message = runtimeFailureMessage(error);
+        this.pushLog('err', message);
+        this.setStage('setup_required', { message });
       }
     } finally {
       stopWatching();
@@ -1390,8 +1402,9 @@ export class BackendSupervisor extends EventEmitter<{
         )
           ? 'access'
           : undefined;
-        this.pushLog('err', errorMessage(error));
-        this.setStage('setup_required', { message: errorMessage(error) });
+        const message = runtimeFailureMessage(error);
+        this.pushLog('err', message);
+        this.setStage('setup_required', { message });
       }
       return;
     } finally {
@@ -1579,15 +1592,24 @@ export class BackendSupervisor extends EventEmitter<{
     const candidates = (
       configured ? [configured] : [this.runtimeProject, own, ...legacyTauriRuntimeProjects()]
     ).filter((candidate): candidate is string => Boolean(candidate));
+    const selected = configured ?? own;
+    let selectedRefusal: RuntimeLaunchRefusedError | undefined;
     for (const project of new Set(candidates.map((candidate) => resolve(candidate)))) {
-      if (await runtimeProjectReady(bundle, project)) {
-        this.runtimeProject = project;
-        if (project !== own && project !== configured)
-          this.pushLog('out', `Reusing compatible Tauri runtime: ${project}`);
-        return { project, ready: true };
+      try {
+        if (await runtimeProjectReady(bundle, project)) {
+          this.runtimeProject = project;
+          if (project !== own && project !== configured)
+            this.pushLog('out', `Reusing compatible Tauri runtime: ${project}`);
+          return { project, ready: true };
+        }
+      } catch (error) {
+        if (!(error instanceof RuntimeLaunchRefusedError)) throw error;
+        // A legacy candidate must not prevent setup or reuse of another one.
+        if (samePath(project, selected)) selectedRefusal = error;
       }
     }
-    this.runtimeProject = configured ?? own;
+    this.runtimeProject = selected;
+    if (selectedRefusal) throw selectedRefusal;
     return { project: this.runtimeProject, ready: false };
   }
 

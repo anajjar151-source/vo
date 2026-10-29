@@ -624,6 +624,62 @@ def test_weights_step_downloads_via_endpoint_autoselect(monkeypatch):
     assert si._weights_present(spec)
 
 
+@pytest.mark.parametrize("first,second", [
+    ("https://hf-mirror.com", None),
+    (None, "https://hf-mirror.com"),
+])
+@pytest.mark.parametrize("retry_fails", [False, True])
+def test_weights_download_retries_once_on_changed_endpoint(monkeypatch, first, second, retry_fails):
+    import huggingface_hub
+    from services import endpoint_race
+    from services.token_resolver import ResolvedToken
+
+    spec = _mk_spec(weights_repo_id="Example/Weights", weights_revision="fixed-revision",
+                    weights_allow_patterns=("config.yaml", "model.safetensors"))
+    endpoints = iter([first, second])
+    calls, failures = [], []
+    monkeypatch.setattr(endpoint_race, "effective_endpoint", lambda: next(endpoints))
+    monkeypatch.setattr(endpoint_race, "reselect_after_failure", lambda repo, reason: failures.append((repo, reason)) or True)
+    monkeypatch.setattr("services.token_resolver.resolve", lambda: ResolvedToken(token="hf_test_secret", source="app", username="test"))
+    def download(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1 or retry_fails:
+            raise RuntimeError("Connection reset by peer")
+        _write_weights(Path(kwargs["local_dir"]), complete=False)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
+    if retry_fails:
+        with pytest.raises(si._StepError, match="Model weight download failed"):
+            si._step_fetch_weights(spec, si._new_job(spec.engine_id))
+    else:
+        si._step_fetch_weights(spec, si._new_job(spec.engine_id))
+    assert len(calls) == 2
+    assert failures == [(spec.weights_repo_id, "Connection reset by peer")]
+    assert calls[0].get("endpoint") == first
+    assert calls[1].get("endpoint") == second
+    for call, endpoint in zip(calls, [first, second]):
+        assert call["token"] == (False if endpoint else "hf_test_secret")
+        assert call["revision"] == "fixed-revision"
+        assert call["allow_patterns"] == ["config.yaml", "model.safetensors"]
+    assert si._weights_present(spec) is not retry_fails
+
+
+def test_weights_download_stops_when_endpoint_does_not_change(monkeypatch):
+    import huggingface_hub
+    from services import endpoint_race
+    spec = _mk_spec(weights_repo_id="Example/Weights")
+    calls = []
+    def download(**kwargs):
+        calls.append(kwargs)
+        raise RuntimeError("Connection reset by peer")
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
+    monkeypatch.setattr(endpoint_race, "reselect_after_failure", lambda *a: False)
+    monkeypatch.setattr("services.token_resolver.resolve", lambda: None)
+    with pytest.raises(si._StepError, match="Model weight download failed"):
+        si._step_fetch_weights(spec, si._new_job(spec.engine_id))
+    assert len(calls) == 1
+    assert not si._weights_present(spec)
+
+
 class _DownloadRecorder:
     """Stand-in for snapshot_download that remembers the kwargs it was given."""
 

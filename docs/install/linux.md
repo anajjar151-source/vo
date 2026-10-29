@@ -25,6 +25,10 @@ override them or update yt-dlp.
 
 **Snap Store** (Ubuntu and other distributions with snapd):
 
+<a href="https://snapcraft.io/voicestudio"><img src="https://snapcraft.io/en/dark/install.svg" alt="Get it from the Snap Store" height="40" /></a>
+
+or from a terminal:
+
 ```bash
 sudo snap install voicestudio
 ```
@@ -159,8 +163,6 @@ A community-maintained Nix flake provides development shells and an FHS environm
 
 ```bash
 nix develop .#fhs   # recommended for NixOS
-bun install
-bun run setup:api
 bun run dev
 ```
 

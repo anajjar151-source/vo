@@ -18,6 +18,12 @@ import {
 import { APP_ID, PRODUCT_NAME } from '../../config/app-config.mjs';
 import { DISTRIBUTION_PROFILE, DISTRIBUTION_TARGET } from '../../config/distributions.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const installerProcessesTest = spawnSync(
+  process.execPath,
+  ['--test', resolve(root, 'tests/windows-installer-processes.test.mjs')],
+  { encoding: 'utf8' },
+);
+assert.equal(installerProcessesTest.status, 0, installerProcessesTest.stdout + installerProcessesTest.stderr);
 if (process.platform === 'linux') {
   const librariesTest = spawnSync(
     process.execPath,

@@ -52,7 +52,7 @@ describe('ExportModal (regression #183)', () => {
 
     fireEvent.mouseDown(
       target === 'search'
-        ? screen.getByRole('textbox', { name: /search/i })
+        ? screen.getByRole('combobox', { name: /default audio/i })
         : screen.getByRole('option', { name: /^ES/ }),
     );
     expect(onClose).not.toHaveBeenCalled();
@@ -70,7 +70,7 @@ describe('ExportModal (regression #183)', () => {
     renderModal({ onClose });
     const trigger = screen.getByRole('button', { name: /default audio/i });
     fireEvent.click(trigger);
-    fireEvent.keyDown(screen.getByRole('textbox', { name: /search/i }), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: /default audio/i }), { key: 'Escape' });
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
     expect(trigger).toHaveFocus();

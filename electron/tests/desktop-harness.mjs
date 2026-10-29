@@ -1,4 +1,6 @@
 import { _electron as electron } from 'playwright';
+import { once } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import {
   appendFileSync,
   cpSync,
@@ -105,8 +107,11 @@ async function launch({ profile, backendPort, seed }) {
     },
     timeout: 60000,
   });
+  // Playwright disposes its process channel when Electron closes. Keep the
+  // actual child so post-crash guards can inspect exit state without that channel.
+  const child = app.process();
   const output = [];
-  for (const stream of [app.process().stdout, app.process().stderr]) {
+  for (const stream of [child.stdout, child.stderr]) {
     stream?.on('data', (chunk) => output.push(String(chunk)));
   }
   const context = app.context();
@@ -155,13 +160,14 @@ async function launch({ profile, backendPort, seed }) {
   });
   // The main-process guard predates the app; one reload also replays the first page's console.
   await page.reload();
-  return { app, page, errors };
+  return { app, child, page, errors };
 }
 
 /**
  * Runs `body` against a freshly launched desktop app and enforces the run-wide guards:
  * every request stays local, no renderer errors, no main-process errors. On failure the
  * trace, a screenshot and the app logs are saved to ARTIFACT_DIR/<test name>/.
+ * Planned exits use session.crash() to capture guards before the process dies.
  */
 export async function withApp(t, options, body) {
   const { profile: given, fixtures, seed = true, backend: backendMode = 'up' } = options;
@@ -184,7 +190,7 @@ export async function withApp(t, options, body) {
       : null;
   let backendPort = backend ? backend.port : await freePort();
   const live = [];
-  const session = { profile, backend, relaunch: null };
+  const session = { profile, backend, relaunch: null, crash: null };
   const start = async () => {
     // With the dev proxy on an OS-assigned port, the backend port is the only one
     // picked ahead of time, so it is the only one worth re-picking on a collision.
@@ -199,6 +205,24 @@ export async function withApp(t, options, body) {
     Object.assign(session, started);
     return session;
   };
+  session.crash = async () => {
+    const started = live.at(-1);
+    // The crashed process cannot return its request log afterward.
+    await collectGuards(started);
+    const signal = AbortSignal.timeout(30_000);
+    const exited = once(started.child, 'exit', { signal });
+    const closed = once(started.app, 'close', { signal });
+    started.expectedExit = true;
+    if (process.platform === 'win32') {
+      // Playwright launches through cmd.exe on Windows. Killing only that
+      // wrapper leaves Electron alive and its inherited output pipes open.
+      execFileSync('taskkill.exe', ['/PID', String(started.child.pid), '/T', '/F'], {
+        windowsHide: true,
+        timeout: 10_000,
+      });
+    } else started.child.kill('SIGKILL');
+    await Promise.all([exited, closed]);
+  };
   session.relaunch = async () => {
     const previous = live.at(-1);
     await collectGuards(previous);
@@ -211,9 +235,12 @@ export async function withApp(t, options, body) {
   let unobserved = 0;
   async function collectGuards(started) {
     errors.push(...started.errors);
-    const child = started.app.process();
-    // A killed app cannot be asked for its log; every other read error must fail the run.
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    const { child } = started;
+    if (child.exitCode !== null || child.signalCode !== null) {
+      assert.equal(started.expectedExit, true, 'Desktop process exited unexpectedly');
+      // Planned crashes already collected this launch's guards while it was alive.
+      return;
+    }
     const seen = await started.app.evaluate(() => globalThis.__requestLog);
     // An empty log means the guard never ran (hook missing or replaced), not that all is well.
     if (!seen.some((url) => url.startsWith('app:'))) unobserved += 1;

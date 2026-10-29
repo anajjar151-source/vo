@@ -441,6 +441,62 @@ describe('packaged runtime setup', () => {
     ]);
     expect(ROCM_TORCH_INDEX).toContain('/rocm');
   });
+  it.each([false, true])(
+    'repairs executable-stack libraries after a ROCm swap (existing environment: %s)',
+    async (existing) => {
+      forcePlatform('linux');
+      vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+      vi.stubEnv('OMNIVOICE_TORCH_VARIANT', 'rocm');
+      const { bundle, project } = await fixture();
+      const sitePackages = join(project, '.venv', 'lib', 'python3.11', 'site-packages');
+      const library = join(sitePackages, 'ctranslate2.libs', 'libctranslate2-d3638643.so.4.4.0');
+      const installLibrary = async () => {
+        await interpreter(project);
+        await mkdir(dirname(library), { recursive: true });
+        const elf = Buffer.alloc(120);
+        elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
+        elf.writeBigUInt64LE(64n, 32);
+        elf.writeUInt16LE(56, 54);
+        elf.writeUInt16LE(1, 56);
+        elf.writeUInt32LE(0x6474e551, 64);
+        elf.writeUInt32LE(7, 68);
+        await writeFile(library, elf);
+      };
+      if (existing) await installLibrary();
+      let importFailures = 0;
+      const run = vi.fn(async (_command: string, args: string[]) => {
+        if (args[0] === 'sync' && !args.includes('--dry-run')) await installLibrary();
+        if (args[0] === 'pip' && args[1] === 'install') {
+          if (args.includes('--index-url') || args.includes('--reinstall')) {
+            throw new Error('No solution found: only pillow<=12.3.0 is available');
+          }
+        }
+        if (args[1]?.includes('VOICESTUDIO_CUDNN8_PROBE=')) {
+          expect(args[1]).not.toContain('import torch');
+          return `VOICESTUDIO_CUDNN8_PROBE=${JSON.stringify({ device: 'hip', sitePackages })}\n`;
+        }
+        // The torch-only native probe never imports faster_whisper/CTranslate2.
+        if (args[1] === RUNTIME_IMPORT_PROBE) {
+          if ((await readFile(library)).readUInt32LE(68) & 1) {
+            importFailures += 1;
+            throw new Error(
+              'ImportError: libctranslate2-d3638643.so.4.4.0: cannot enable executable stack as shared object requires: Invalid argument',
+            );
+          }
+        }
+        return undefined;
+      });
+      await installRuntime(
+        bundle, project, 'uv', run, new AbortController().signal, undefined, 'global',
+      );
+      expect(importFailures).toBe(existing ? 1 : 0);
+      for (const [, args] of run.mock.calls) {
+        if (args[0] === 'sync') expect(args).not.toContain('--reinstall-package');
+      }
+      expect((await readFile(library)).readUInt32LE(68)).toBe(6);
+      expect(await runtimeReady(bundle, project)).toBe(true);
+    },
+  );
   it('refuses to mark a non-ROCm torch ready after a ROCm install', async () => {
     forcePlatform('linux');
     const { bundle, project } = await fixture();

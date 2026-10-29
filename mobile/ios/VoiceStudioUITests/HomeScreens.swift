@@ -3,7 +3,7 @@ import XCTest
 final class HomeScreens: XCTestCase {
     @MainActor func testHomeStartsOfflineAndOpensEveryWorkspace() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
-        app.launch(); XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10)); app.buttons["consent.no"].tap()
+        app.launch(); app.declineConsent()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         let title = app.descendants(matching: .any)["navigation.title"].firstMatch
         XCTAssertTrue(title.exists)
@@ -43,8 +43,7 @@ final class MaintainerCardScreens: XCTestCase {
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         return app
     }

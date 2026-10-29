@@ -32,6 +32,7 @@ import { FamilyList } from './family-list';
 import type { FamilyItem } from './family-row';
 import { useEngineSelect } from './use-engine-select';
 import { GGUF_ENGINE, GgufQuantPicker } from './gguf-quant-picker';
+import { asrSetupHint, engineUnavailableReason } from './engine-guidance';
 
 type Family = 'tts' | 'asr';
 
@@ -60,7 +61,13 @@ function modelChoice(ctx: Context, engine: EngineBackend, model: CatalogueModel)
 function engineSummary(ctx: Context, engine: EngineBackend, active: boolean) {
   if (engine.local_install_required && !engine.available)
     return ctx.t('engines.localInstallRequired');
-  if (!engine.available) return engine.reason || engine.install_hint || engine.hint || undefined;
+  if (!engine.available)
+    return (
+      engineUnavailableReason(engine.reason, ctx.t) ||
+      (ctx.family === 'asr' ? asrSetupHint(engine, ctx.t) : engine.install_hint) ||
+      engine.hint ||
+      undefined
+    );
   if (active && ctx.state.active_model) {
     const model = ctx.models.find(
       (item) =>
@@ -97,9 +104,15 @@ function engineItem(ctx: Context, engine: EngineBackend): FamilyItem {
   const singleInfo = single ? describeJob(single, ops) : undefined;
   const fallbackNote =
     engine.available && engine.routing_status === 'cpu_fallback' ? engine.routing_reason : null;
+  const setupHint =
+    !engine.local_install_required && !engine.setup_snippet && !engine.docs_url
+      ? ctx.family === 'asr'
+        ? asrSetupHint(engine, t)
+        : engine.install_hint
+      : undefined;
   const details = (
     <EngineDetails
-      detail={engine.available ? fallbackNote : engineSummary(ctx, engine, active)}
+      detail={engine.available ? fallbackNote : setupHint || engineSummary(ctx, engine, active)}
       snippet={engine.available ? null : engine.setup_snippet}
       docsUrl={engine.docs_url}
       tools={
@@ -158,7 +171,7 @@ function engineItem(ctx: Context, engine: EngineBackend): FamilyItem {
           />
         )}
         {!engine.available && (
-          <StatusBadge tone="muted" title={engine.reason || undefined}>
+          <StatusBadge tone="muted" title={engineUnavailableReason(engine.reason, t) || undefined}>
             {t('modelSettings.unavailable')}
           </StatusBadge>
         )}

@@ -44,6 +44,14 @@ The setup wizard installs for the current user by default (no administrator
 rights needed) and lets you choose the installation folder. Compare the download with the
 release's `SHA256SUMS.txt` before running it.
 
+During an update, the installer closes processes running inside the selected
+installation folder. Processes in similarly named sibling folders and the
+installer itself are excluded. If an older installer leaves a running copy
+open, exit that copy before retrying. If it keeps saying VoiceStudio
+cannot be closed when the app is stopped, run the installer from a different
+folder (for example Downloads) and retry; keep your existing runtime, model
+cache and data folders.
+
 Or, from a regular (non-admin) PowerShell, let the
 [install script](script.md) pick the right installer, verify it, and open the
 wizard:

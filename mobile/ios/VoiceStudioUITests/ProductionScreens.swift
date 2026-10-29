@@ -5,8 +5,7 @@ final class ProductionScreens: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 15))
-        app.buttons["consent.no"].tap()
+        app.declineConsent(timeout: 15)
         for (route,title) in [("transcriptions","Transcriptions"),("handoff","Project handoff and backup"),("design","Voice design"),("stories","Stories"),("audiobook","Audiobook"),("batch","Batch dubbing"),("gallery","Gallery"),("workflows","Workflows"),("calls","Calls"),("local-api","Phone speech API"),("tools","Tools")] {
             let card = app.buttons["home."+route]
             for _ in 0..<8 { if card.isHittable { break }; app.swipeUp() }

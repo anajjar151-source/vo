@@ -115,3 +115,22 @@ it('shows progress wording while rendering and a stopped note afterwards', () =>
   );
   expect(screen.getByText(/stopped/i)).toBeTruthy();
 });
+
+it('lets the panel and its tracker shrink so Stop stays inside a short pane', () => {
+  render(
+    <GeneratePanel
+      mode="stories"
+      blocker={null}
+      session={{
+        ...quiet,
+        active: 'stories',
+        total: 1,
+        chapters: [{ title: 'One', status: 'rendering' }],
+      }}
+      {...handlers()}
+    />,
+  );
+  const panel = document.querySelector('[data-slot="generate-panel"]');
+  expect(panel).toHaveClass('min-h-0');
+  expect(panel?.querySelector('.overflow-y-auto')).toHaveClass('min-h-0');
+});

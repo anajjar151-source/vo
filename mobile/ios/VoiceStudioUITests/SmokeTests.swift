@@ -1,6 +1,13 @@
 import XCTest
 
 extension XCUIApplication {
+    /// Home remains in the hierarchy while the first-run sheet covers it.
+    @MainActor func declineConsent(timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
+        let no = buttons["consent.no"]
+        XCTAssertTrue(no.wait(for: \.isHittable, toEqual: true, timeout: timeout), file: file, line: line)
+        no.tap()
+        XCTAssertTrue(no.waitForNonExistence(timeout: 5), file: file, line: line)
+    }
     /// Native TabView can expose either a bottom tab bar or an adaptive side rail.
     @MainActor func tabButton(_ label: String) -> XCUIElement {
         let tab = tabBars.buttons[label]
@@ -74,8 +81,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "--ui-phone-history", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.openSpeak()
         let saved = app.staticTexts["Saved audio for deletion review"]
         XCTAssertTrue(saved.waitForExistence(timeout: 5))
@@ -96,8 +102,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.openSpeak()
         XCTAssertTrue(app.textViews["speak.text"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["models.open"].exists)
@@ -230,8 +235,7 @@ final class SmokeTests: XCTestCase {
     }
 
     @MainActor private func connect(_ app: XCUIApplication) {
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.tabButton("Settings").tap()
         app.buttons["settings.connect"].tap()
         app.buttons["Enter address"].tap()
@@ -248,8 +252,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         XCTAssertTrue(app.tabButton("Home").exists)
         app.tabButton("Settings").tap()
         app.buttons["settings.connect"].tap()
@@ -314,8 +317,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.tabButton("Settings").tap()
         app.buttons["settings.connect"].tap()
         app.buttons["Enter address"].tap()
@@ -376,7 +378,7 @@ final class SmokeTests: XCTestCase {
     @MainActor private func dismissUsingDone(_ app: XCUIApplication) {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let done = app.buttons["keyboard.done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
         done.tap()
         assertKeyboardDismissed(app)
     }

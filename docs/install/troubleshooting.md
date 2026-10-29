@@ -757,7 +757,7 @@ order:
   corporate/school networks.
 - **Region mirror** — if `huggingface.co` is slow/blocked where you are,
   VoiceStudio normally handles this automatically: with no endpoint explicitly
-  configured it probes both the official endpoint and the `hf-mirror.com`
+  configured (including with the China region selected) it probes both the official endpoint and the `hf-mirror.com`
   community mirror and downloads from whichever works (downloads are
   checksum-verified either way; see
   [downloading-models.md](../downloading-models.md)). To check or re-test the
@@ -767,6 +767,13 @@ order:
   set it as an env var before launching and relaunch:
   - macOS/Linux: `export HF_ENDPOINT=https://hf-mirror.com`
   - Windows (PowerShell): `[Environment]::SetEnvironmentVariable("HF_ENDPOINT","https://hf-mirror.com","User")`
+
+  Automatic selection checks model-file metadata, so a mirror that only
+  redirects to the official host without supplying download metadata is not
+  selected. If you pinned a mirror explicitly and downloads fail with an
+  invalid etag or missing metadata, restore automatic selection in the same
+  panel or choose the official endpoint. Old automatic decisions are checked
+  again during setup after this update.
 
 A segmented download refuses a response whose status or Content-Range does not match the requested bytes and file size. An invalid response is not published as the model file; retry through a server or mirror that supports correct byte ranges.
 
@@ -1445,6 +1452,14 @@ Per-engine receive overrides include `OMNIVOICE_CONFUCIUS4_RECV_TIMEOUT_S`, `OMN
 
 When FFprobe is not on PATH, VoiceStudio also checks beside the selected FFmpeg binary. Parent folders named `ffmpeg` remain unchanged; only the executable name becomes `ffprobe` (or `ffprobe.exe` on Windows).
 
+### Environment file encoding
+
+Project `.env` files may use UTF-8 or BOM-marked UTF-16 or UTF-32. If a file
+cannot be decoded, VoiceStudio skips it for that launch and logs a warning;
+save it as UTF-8 to restore its settings. The saved per-user environment file
+uses UTF-8 and is left untouched if it cannot be read. Check the log and correct
+the file before relying on its settings.
+
 ### Subtitle and manuscript encodings
 
 Electron and web imports accept UTF-8, UTF-16 with a byte-order mark, and Windows-1252 text. The same decoder rules apply to uploaded subtitles and audiobook manuscripts; legacy punctuation is preserved.
@@ -1482,12 +1497,25 @@ Python traceback may not exist; include the captured crash details and system/GP
 information when reporting them. The name identifies the failure category, not
 its cause: it does not by itself prove a driver, model, or memory problem.
 
+On macOS, stopping a timed-out engine or installer operation can race with its
+supervisor exiting. VoiceStudio briefly rechecks that exact owned supervisor before
+treating a process-group permission error as already-completed cleanup;
+permission failures for a live operation still surface as errors.
+
 ### Backend would not start (Windows: `spawn UNKNOWN`, "did not answer", "environment incomplete")
 
 Three different startup failures share the same screen. The app now names the
 program it tried to launch, quotes what the backend last printed (or says it
 printed nothing, or that nothing was spawned), and adds a localized hint under
 the message:
+
+If Windows refuses to launch the selected Python interpreter during the initial
+dependency check, the failure names that interpreter and uses the same launch
+guidance below, without automatically reinstalling it. With no custom runtime
+selected, VoiceStudio can still reuse another compatible runtime; a blocked,
+unused legacy runtime does not prevent setup of a missing default runtime.
+An explicitly selected runtime remains authoritative. Missing interpreters and
+import errors still use the normal setup or repair flow.
 
 When the app recognises the cause it also names it in one line and puts the
 matching action first: **Choose another folder** for a missing environment, a

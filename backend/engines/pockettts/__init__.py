@@ -65,6 +65,7 @@ class PocketTTSBackend(SubprocessBackend):
     """Kyutai PocketTTS in a killable, CPU-only sidecar process."""
 
     id = "pockettts"
+    requires_hf_auth = True
     display_name = "PocketTTS (Kyutai, 6 langs, CPU-only, MIT/CC-BY-4.0)"
     _DEFAULT_SAMPLE_RATE = 24_000
     # CPU-only by design (honest hardware reporting, like supertonic3): Kyutai

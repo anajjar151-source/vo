@@ -50,6 +50,17 @@ afterEach(() => {
   state.checkout = true;
   vi.unstubAllEnvs();
 });
+it.each(['darwin', 'win32', 'linux'] as const)(
+  'leaves China downloads eligible for automatic failover on %s',
+  (platform) => {
+    vi.stubEnv('HF_ENDPOINT', undefined);
+    expect(managedBackendSpawnOptions(3900, 'china', platform).env.HF_ENDPOINT).toBeUndefined();
+    vi.stubEnv('HF_ENDPOINT', 'https://custom.example');
+    expect(managedBackendSpawnOptions(3900, 'china', platform).env.HF_ENDPOINT).toBe(
+      'https://custom.example',
+    );
+  },
+);
 it('launches the prepared source interpreter without syncing or downloading dependencies', async () => {
   vi.stubEnv('OMNIVOICE_BACKEND_CMD', '');
   const plan = await resolveSpawnPlan(3912);
@@ -200,7 +211,7 @@ it('passes legacy storage to packaged backends while preserving explicit overrid
   expect(managedBackendSpawnOptions(3900).env.OMNIVOICE_DATA_DIR).toBeUndefined();
 });
 
-it('names the program and runtime repair when the OS rejects a spawn', () => {
+it('names the refused program without recommending runtime repair', () => {
   const python = String.raw`C:\Users\u\VoiceStudio\.venv\Scripts\python.exe`;
   const message = spawnFailureMessage(
     python,
@@ -208,7 +219,7 @@ it('names the program and runtime repair when the OS rejects a spawn', () => {
   );
   expect(message).toContain(python);
   expect(message).toContain('spawn UNKNOWN');
-  expect(message).toContain('repair the local runtime');
+  expect(message).not.toContain('repair the local runtime');
 });
 
 it('reads Smart App Control from the registry output', () => {
@@ -233,14 +244,15 @@ it('names Smart App Control when it blocked the runtime (#3224)', () => {
     expect(message).toContain('Windows Smart App Control blocked it');
     expect(message).not.toContain('repair the local runtime');
   }
-  // Off or unreadable: the existing advice stays.
+  // Off or unreadable: keep the OS refusal without recommending reinstallation.
   for (const smartAppControl of ['off', 'unknown'] as const) {
-    expect(spawnFailureMessage(python, blocked, { smartAppControl })).toContain(
+    expect(spawnFailureMessage(python, blocked, { smartAppControl })).not.toContain(
       'repair the local runtime',
     );
   }
   // Only the bare Windows UNKNOWN is attributed to it, never a missing file.
   const missing = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+  expect(spawnFailureMessage(python, missing)).toContain('repair the local runtime');
   expect(spawnFailureMessage(python, missing, { smartAppControl: 'on' })).not.toContain(
     'Smart App Control',
   );

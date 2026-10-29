@@ -6,8 +6,7 @@ final class ApplePresentationScreens: XCTestCase {
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)",
                                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.openSpeak()
         let generate = app.buttons["speak.generate"]
         XCTAssertTrue(generate.waitForExistence(timeout: 5))
@@ -35,8 +34,7 @@ final class ApplePresentationScreens: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.tabButton("Dub").tap()
         app.buttons["dub.languages"].tap()
         let french = app.buttons["French"]

@@ -11,7 +11,7 @@
     "dev:desktop": "bun run --cwd electron dev",
     "wait:api": "node scripts/wait-app-port.mjs api",
     "wait:frontend": "node scripts/wait-app-port.mjs web",
-    "predev": "bun install",
+    "predev": "node scripts/prepare-dev.mjs",
     "dev": "bun run --cwd electron dev",
     "predesktop": "bun install",
     "desktop": "bun run --cwd electron dev",
@@ -40,5 +40,8 @@
     "playwright": "^1.64.1",
     "taze": "^21.3.0",
     "wait-on": "^9.5.1"
+  },
+  "patchedDependencies": {
+    "app-builder-lib@26.15.3": "patches/app-builder-lib-26.15.3.patch"
   }
 }

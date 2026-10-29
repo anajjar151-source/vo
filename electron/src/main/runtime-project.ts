@@ -5,6 +5,7 @@ import {
 } from '../../scripts/torch-variant.mjs';
 export { nvidiaDriverPresent, cudaOnlyPackages } from '../../scripts/torch-variant.mjs';
 import { inspectRuntimeInterpreter } from './runtime-interpreter';
+import { RuntimeLaunchRefusedError, runtimeLaunchRefusal } from './runtime-launch-refusal';
 import { WINDOWS_ROCM_IMPORT_TIMEOUT_MS } from './runtime-probe';
 import {
   windowsRocmSelected,
@@ -599,29 +600,43 @@ export async function runtimeDependenciesReady(
   env.HF_HUB_OFFLINE = '1';
   env.TRANSFORMERS_OFFLINE = '1';
   env.PYTHONNOUSERSITE = '1';
-  return new Promise((resolve) => {
-    execFile(
-      runtimePython(project),
-      ['-c', (windowsRocm ? WINDOWS_ROCM_IMPORT_PREFIX : '') + RUNTIME_IMPORT_PROBE],
-      {
-        cwd: project,
-        windowsHide: true,
-        timeout: RUNTIME_PROBE_TIMEOUT_MS,
-        maxBuffer: 256 * 1024,
-        env,
-      },
-      (error, stdout, stderr) => {
-        const ready = !error || (!windowsRocm && probeTimedOut(error));
-        if (!ready) {
-          const module = lastImportAttempted(stdout);
-          const detail = probeFailureDetail(error, stderr);
-          onFailure?.(
-            module && !String(stderr ?? '').trim() ? `${detail} (importing ${module})` : detail,
-          );
-        }
-        resolve(ready);
-      },
-    );
+  return new Promise((resolve, reject) => {
+    const python = runtimePython(project);
+    const complete = (error: unknown, stdout = '', stderr = '') => {
+      const refusal = runtimeLaunchRefusal(python, error);
+      if (refusal) {
+        reject(refusal);
+        return;
+      }
+      const ready = !error || (!windowsRocm && probeTimedOut(error));
+      if (!ready) {
+        const module = lastImportAttempted(stdout);
+        const detail = probeFailureDetail(error, stderr);
+        onFailure?.(
+          module && !stderr.trim() ? `${detail} (importing ${module})` : detail,
+        );
+      }
+      resolve(ready);
+    };
+    try {
+      execFile(
+        python,
+        ['-c', (windowsRocm ? WINDOWS_ROCM_IMPORT_PREFIX : '') + RUNTIME_IMPORT_PROBE],
+        {
+          cwd: project,
+          windowsHide: true,
+          timeout: RUNTIME_PROBE_TIMEOUT_MS,
+          maxBuffer: 256 * 1024,
+          env,
+        },
+        complete,
+      );
+    } catch (error) {
+      const refusal = runtimeLaunchRefusal(python, error);
+      if (refusal) reject(refusal);
+      else if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') complete(error);
+      else reject(error);
+    }
   });
 }
 
@@ -804,7 +819,8 @@ export async function runtimeReady(bundle: string, project: string): Promise<boo
       (!windowsRocmSelected() ||
         ((await windowsRocmRecipeMatches(bundle, project)) && (await windowsRocmReady(project))))
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof RuntimeLaunchRefusedError) throw error;
     return false;
   }
 }
@@ -850,7 +866,8 @@ export async function runtimeCompatible(bundle: string, project: string): Promis
       (!windowsRocmSelected() ||
         ((await windowsRocmRecipeMatches(bundle, project)) && (await windowsRocmReady(project))))
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof RuntimeLaunchRefusedError) throw error;
     return false;
   }
 }

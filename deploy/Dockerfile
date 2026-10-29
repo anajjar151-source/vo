@@ -20,6 +20,7 @@ WORKDIR /app
 # so `bun install` caches independently of source edits.
 COPY package.json bun.lock ./
 COPY electron/package.json ./electron/
+COPY patches/ ./patches/
 COPY config/ ./config/
 
 RUN bun install --frozen-lockfile
