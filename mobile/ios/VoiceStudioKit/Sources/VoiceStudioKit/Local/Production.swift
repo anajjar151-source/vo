@@ -29,7 +29,7 @@ public struct ProductionPlan: Sendable {
         let stripped = NSMutableString(string: script)
         for tag in emotionPattern.matches(in: script, range: NSRange(script.startIndex..., in: script)).reversed() {
             let text = stripped.substring(with: tag.range)
-            if text.range(of: "[\\r\\n][ \\t]*# ", options: .regularExpression) != nil { continue }
+            if text.components(separatedBy: .newlines).dropFirst().contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("# ") }) { continue }
             let breaks = text.filter(\.isNewline)
             stripped.replaceCharacters(in: tag.range, with: breaks.isEmpty ? " " : breaks)
         }

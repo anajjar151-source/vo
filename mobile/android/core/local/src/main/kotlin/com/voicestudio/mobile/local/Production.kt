@@ -21,13 +21,12 @@ data class ProductionPlan(val segments: List<ProductionSegment>, val chapters: L
         // after it still starts its line. A tag never spans a "# " heading, which the desktop
         // parser splits first. Case-insensitive like the desktop parser.
         private val EMOTION=Regex("\\[emotion:[^\\]\\[]*\\]",RegexOption.IGNORE_CASE)
-        private val HEADING=Regex("[\\r\\n][ \\t]*# ")
         fun parse(script: String,pronunciations: Map<String,String> = emptyMap(),speed: Float=1f): ProductionPlan {
             require(speed.isFinite()&&speed in 0.5f..2f&&pronunciations.size<=100)
             val replacements=NarrationText.rules(pronunciations)
             require(script.length <= 1_000_000)
             val segments=mutableListOf<ProductionSegment>();val chapters=mutableListOf("");var role=""
-            EMOTION.replace(script) {tag -> if(HEADING.containsMatchIn(tag.value)) tag.value else tag.value.filter {it=='\n'||it=='\r'}.ifEmpty {" "}}.lineSequence().forEach {raw ->
+            EMOTION.replace(script) {tag -> if(tag.value.lines().drop(1).any {it.trim().startsWith("# ")}) tag.value else tag.value.filter {it=='\n'||it=='\r'}.ifEmpty {" "}}.lineSequence().forEach {raw ->
                 var line=raw.trim()
                 if(line.startsWith("# ")) {
                     val title=line.drop(2).trim()
